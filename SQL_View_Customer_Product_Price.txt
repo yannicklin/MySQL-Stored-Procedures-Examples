@@ -1,0 +1,41 @@
+CREATE 
+    ALGORITHM = UNDEFINED 
+    SQL SECURITY DEFINER
+VIEW `sampledb`.`kuom_product_customer_price_view` AS
+    SELECT 
+        `pc`.`id_customer` AS `id_customer`,
+        `pc`.`company` AS `company`,
+        CONCAT(`pc`.`firstname`, " ", `pc`.`lastname`) AS `name`,
+        `pc`.`email` AS `email`,
+        `pc`.`active` AS `active`,
+        `pcp`.`reference` AS `reference`,
+        `pcp`.`price` AS `price`,
+        `p`.`id_product` AS `id_product`,
+        NULL AS `id_product_attribute`
+    FROM
+        ((`sampledb`.`kuom_product_customer_price` `pcp`
+        JOIN `sampledb`.`kuom_product` `p` ON ((`pcp`.`reference` = `p`.`reference`)))
+        JOIN `sampledb`.`kuom_customer` `pc` ON ((`pcp`.`id_customer` = `pc`.`id_customer`)))
+    WHERE
+        (NOT (`p`.`id_product` IN (SELECT DISTINCT
+                `sampledb`.`kuom_product_attribute`.`id_product`
+            FROM
+                `sampledb`.`kuom_product_attribute`))) AND `p`.`active` = 1 
+    UNION SELECT 
+        `pc`.`id_customer` AS `id_customer`,
+        `pc`.`company` AS `company`,
+        CONCAT(`pc`.`firstname`, " ", `pc`.`lastname`) AS `name`,
+        `pc`.`email` AS `email`,
+        `pc`.`active` AS `active`,
+        `pcp`.`reference` AS `reference`,
+        `pcp`.`price` AS `price`,
+        `pa`.`id_product` AS `id_product`,
+        `pa`.`id_product_attribute` AS `id_product_attribute`
+    FROM
+        ((`sampledb`.`kuom_product_customer_price` `pcp`
+        JOIN `sampledb`.`kuom_product_attribute` `pa` ON ((`pcp`.`reference` = `pa`.`reference`)))
+        JOIN `sampledb`.`kuom_customer` `pc` ON ((`pcp`.`id_customer` = `pc`.`id_customer`)))
+	WHERE `pa`.`id_product` IN (SELECT DISTINCT
+			`sampledb`.`kuom_product`.`id_product`
+		FROM
+			`sampledb`.`kuom_product` WHERE `active` = 1) 

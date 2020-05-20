@@ -1,0 +1,15 @@
+SELECT 
+    `kuom_product`.`id_product`,
+    `kuom_product`.`reference`,
+    `kuom_customer`.`id_customer`,
+    `kuom_customer`.`firstname`,
+    `kuom_customer`.`lastname`,
+    `kuom_customer`.`company`,
+    `kuom_customer`.`email`,
+    `tab_prex_product_customer_price`.`price`
+FROM
+    `data_mapping`.`tab_prex_product_customer_price` AS `tab_prex_product_customer_price`
+        INNER JOIN
+    `sampledb`.`kuom_product` AS `kuom_product` ON `tab_prex_product_customer_price`.`id_product` = `kuom_product`.`id_product`
+        INNER JOIN
+    `sampledb`.`kuom_customer` AS `kuom_customer` ON `tab_prex_product_customer_price`.`id_customer` = `kuom_customer`.`id_customer` where `tab_prex_product_customer_price`.`price` = 0;

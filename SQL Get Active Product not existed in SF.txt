@@ -1,0 +1,23 @@
+SELECT 
+    pr.reference, pr.id_product, prl.name
+FROM
+    (SELECT 
+        reference, id_product
+    FROM
+        sampledb.kuom_product_attribute UNION SELECT 
+        reference, id_product
+    FROM
+        sampledb.kuom_product) AS pr
+        LEFT JOIN
+    sampledb.kuom_product_lang AS prl ON pr.id_product = prl.id_product
+WHERE
+    pr.reference NOT IN (SELECT DISTINCT
+            reference
+        FROM
+            sampledb.kuom_product_customer_price)
+        AND pr.id_product IN (SELECT DISTINCT
+            id_product
+        FROM
+            sampledb.kuom_product
+        WHERE
+            active = 1);

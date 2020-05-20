@@ -1,0 +1,13 @@
+SELECT 
+    kuom_attachment_lang.*,
+    GROUP_CONCAT(pp.reference
+        SEPARATOR ' , ') AS product_avail
+FROM
+    `sampledb`.kuom_attachment_lang
+        LEFT JOIN
+    (SELECT 
+        kuom_product_attachment.*, kuom_product.reference
+    FROM
+        `sampledb`.kuom_product_attachment
+    INNER JOIN `sampledb`.kuom_product ON kuom_product_attachment.id_product = kuom_product.id_product) AS pp ON kuom_attachment_lang.id_attachment = pp.id_attachment
+GROUP BY kuom_attachment_lang.id_attachment

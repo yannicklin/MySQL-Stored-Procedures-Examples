@@ -1,0 +1,10 @@
+/* Append the extra fields to customer_extra */
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `flamestop_targetnz_test`.`fsnz_address` (`id_country`, `id_state`, `id_customer`, `firstname`, `lastname`, `alias`, `company`, `address1`, `postcode`, `city`, `date_add`, `date_upd`, `phone`) SELECT 27 AS `id_country`, 0 AS `id_state`, `id_customer`, 'Auckland' as `FIRSTNAME`, 'Pickup' as `LASTNAME`, CONCAT('Local Branch - ', 'Viking Auckland') AS `Alias`, 'Viking NZ' as `Company`, '105 Hugo Johnston Drive, Penrose' AS `Address1`, '1061' AS `PostCode`, 'Auckland' AS `City`, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '09 969 9009' as `PHONE` FROM `flamestop_targetnz_test`.`fsnz_customer`"));
+	
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `flamestop_targetnz_test`.`fsnz_address` (`id_country`, `id_state`, `id_customer`, `firstname`, `lastname`, `alias`, `company`, `address1`, `postcode`, `city`, `date_add`, `date_upd`, `phone`) SELECT 27 AS `id_country`, 0 AS `id_state`, `id_customer`, 'Wellington' as `FIRSTNAME`, 'Pickup' as `LASTNAME`, CONCAT('Local Branch - ', 'Viking Wellington') AS `Alias`, 'Viking NZ' as `Company`, '12 Cornish Street, Korokoro' AS `Address1`, '5012' AS `PostCode`, 'Lower Hutt' AS `City`, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '04 589 0856' as `PHONE` FROM `flamestop_targetnz_test`.`fsnz_customer`"));
+
+
+CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `flamestop_targetnz_test`.`fsnz_address` WHERE `alias` = 'Local Branch - Auckland' "));
+
+
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `flamestop_targetnz_test`.`fsnz_customer_extra` SET `tab_prex_branch` = 'Viking-Auckland', `tab_prex_branch_email` = 'sales@vikingnz.co.nz', `tab_prex_branch_location` = '105 Hugo Johnston Drive, Penrose, AUCKLAND, NZ, 1061', `tab_prex_branch_phone` = '09 969 9009' WHERE UPPER(`tab_prex_branch`) NOT IN (UPPER('Wellington-VIKING'))"));

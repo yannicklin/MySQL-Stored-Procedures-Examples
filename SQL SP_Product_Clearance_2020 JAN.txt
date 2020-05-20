@@ -1,0 +1,214 @@
+BEGIN
+ DECLARE PS_DBNAME VARCHAR(50);
+ DECLARE batch INT;
+ DECLARE batch_size INT;
+ DECLARE start_point INT;
+ DECLARE DBTABLE_SUFFIX VARCHAR(50);
+ DECLARE PRODUCT_PREFIX VARCHAR(50);
+ 
+ SET sql_mode = 'ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
+ 
+ SET batch = 200;
+ SET batch_size = 100;
+ SET start_point = 0;
+ 
+ SET SERVER_TARGET = IFNULL(SERVER_TARGET, 'au-lego');
+ IF SERVER_TARGET = 'au-lego' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+ ELSEIF SERVER_TARGET = 'target_test' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+ ELSEIF SERVER_TARGET = 'target' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+ ELSEIF SERVER_TARGET = 'nz-lego' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+ ELSEIF SERVER_TARGET = 'targetnz_test' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+ ELSEIF SERVER_TARGET = 'targetnz' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+ ELSE
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = '_au-lego';
+	SET PRODUCT_PREFIX = '';
+ END IF;
+ 
+SELECT 'This procedure is to mark the products to Clearance category based on SaleFoce/JIWA.';
+SELECT 'All data are come from SalesForce without modifications.';
+SELECT 
+    CONCAT('Now it starts: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `temp_fs_product", DBTABLE_SUFFIX, "`;"));
+
+IF SUBSTRING(DBTABLE_SUFFIX, 2, 2) = 'targetnz' THEN
+	CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `temp_fs_product", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT `tab_prex_sf_product`.`NAME`, `tab_prex_sf_product`.`PRODUCTCODE`, `tab_prex_sf_product`.`ISACTIVE`, `tab_prex_sf_product`.`tab_prex_STATUS__C`,
+		CASE WHEN SUBSTRING(UPPER(`NAME`), 1, 3) = 'VK-' THEN CONCAT('", PRODUCT_PREFIX, "', `NAME`) ELSE `NAME` END AS `tab_prex_PRODUCTCODE`
+		FROM
+		`tab_prex_sf_product`
+	WHERE
+		UPPER(`tab_prex_STATUS__C`) IN (UPPER('ACTIVE'), UPPER('DISCONTINUED'), UPPER('SLOW'), UPPER('OBSOLETE')) AND `tab_prex_Database__C` = 'Flamestop7_NZ' ORDER BY NAME ASC )"));
+ELSE
+	CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `temp_fs_product", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT `tab_prex_sf_product`.`NAME`, `tab_prex_sf_product`.`PRODUCTCODE`, `tab_prex_sf_product`.`ISACTIVE`, `tab_prex_sf_product`.`tab_prex_STATUS__C`, CONCAT('", PRODUCT_PREFIX, "', `NAME`) AS `tab_prex_PRODUCTCODE`
+		FROM
+		`tab_prex_sf_product`
+	WHERE
+		UPPER(`tab_prex_STATUS__C`) IN (UPPER('ACTIVE'), UPPER('DISCONTINUED'), UPPER('SLOW'), UPPER('OBSOLETE')) AND `tab_prex_Database__C` = 'Flamestop7' ORDER BY NAME ASC )"));
+END IF;
+			
+CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `temp_fs_product", DBTABLE_SUFFIX, "` WHERE `tab_prex_PRODUCTCODE` NOT IN (SELECT DISTINCT
+            `unireference`
+        FROM
+            ((SELECT DISTINCT CONCAT('", PRODUCT_PREFIX, "', `reference`) AS `unireference` FROM `", PS_DBNAME, "product`
+        WHERE
+            `active` = 1) 
+			UNION
+			SELECT DISTINCT CONCAT('", PRODUCT_PREFIX, "', `reference`) AS `unireference` FROM `", PS_DBNAME, "product_attribute` WHERE `id_product` IN (SELECT DISTINCT `id_product` FROM `", PS_DBNAME, "product`
+        WHERE
+            `active` = 1)) AS `product_reference_list` );"));
+
+/* Manual Force Products out of Clearance */
+/*
+IF SUBSTRING(DBTABLE_SUFFIX, 2, 2) = 'targetnz' THEN
+	SELECT 'Nothing to go with yet.';
+ELSE
+	CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `", PS_DBNAME, "category_product` WHERE CONCAT('", PRODUCT_PREFIX, "', `reference`) IN (SELECT DISTINCT `tab_prex_PRODUCTCODE` FROM `temp_fs_product", DBTABLE_SUFFIX, "` WHERE UPPER(`tab_prex_STATUS__C`) IN (UPPER('ACTIVE'))) AND `id_category` IN (856, 864, 865, 866, 867, 868, 869, 870, 871, 872, 873, 874, 875, 876) "));
+END IF;
+*/
+
+CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `temp_fs_product", DBTABLE_SUFFIX, "` WHERE UPPER(`tab_prex_STATUS__C`) IN (UPPER('ACTIVE'), UPPER('OBSOLETE'));"));
+
+/* Add Products to Clearance */
+CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `temp_fs_product", DBTABLE_SUFFIX, "` WHERE `tab_prex_PRODUCTCODE` IN (SELECT DISTINCT CONCAT('", PRODUCT_PREFIX, "', `product`.`reference`) AS `unireference`
+        FROM `", PS_DBNAME, "category_product` AS `category_product` INNER JOIN `", PS_DBNAME, "product` AS `product` ON `product`.`id_product` = `category_product`.`id_product`
+        WHERE `category_product`.`id_category` IN (856)) AND UPPER(`tab_prex_STATUS__C`) IN (UPPER('DISCONTINUED'), UPPER('SLOW'));"));
+
+IF SUBSTRING(DBTABLE_SUFFIX, 2, 2) = 'targetnz' THEN
+	SELECT 'Nothing to go with yet.';
+ELSE
+	CALL `SP_Exec_Qry`(CONCAT("INSERT IGNORE INTO `", PS_DBNAME, "category_product` (`id_category`, `id_product`, `position`) SELECT 856 AS `category`, `id_product`, 0 AS `position` FROM `", PS_DBNAME, "product` WHERE `active` = 1 AND CONCAT('", PRODUCT_PREFIX, "', `reference`) IN (SELECT DISTINCT `tab_prex_PRODUCTCODE` FROM `temp_fs_product", DBTABLE_SUFFIX, "` WHERE UPPER(`tab_prex_STATUS__C`) IN (UPPER('DISCONTINUED'), UPPER('SLOW')));"));
+
+	/* Run Loop for Append the subcategory of Clearance and make as default for the Obsolete products */
+	DROP TEMPORARY TABLE IF EXISTS `temp_clearance_subcategories_mapping`;
+	
+	CREATE TEMPORARY TABLE `temp_clearance_subcategories_mapping` (`clearance` INT, `target` INT) ENGINE=MEMORY;
+	
+	/* Portable Fire Equipment 3 -> 864 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `target`) VALUES (864, 3);
+	/* AS1851 19 -> 865 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `target`) VALUES (865, 19);
+	/* Fire Detection System 6 -> 866 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `target`) VALUES (866, 6);
+	/* VESDA 47 -> 867 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `target`) VALUES (867, 47);
+	/* Exit & Emergency Lighting 164 -> 868 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `target`) VALUES (868, 164);
+	/* Suppresion 718 -> 869 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `target`) VALUES (869, 718);
+	/* Fire Fight Foam 545 -> 870 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `target`) VALUES (870, 545);
+	/* Fire Sprinkler 598 -> 871 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `target`) VALUES (871, 598);
+	/* Passive Fire Equipment 558 -> 872 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `target`) VALUES (872, 558);
+	/* PPE Safety 623 -> 873 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `target`) VALUES (873, 623);
+	/* Cabinet 8 -> 874 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `target`) VALUES (874, 8);
+	/* Hardware & Fasterner 662 -> 875 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `target`) VALUES (875, 662);
+	/* Signage 231 -> 876 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `target`) VALUES (876, 231);
+	
+	BEGIN
+		DECLARE loop_movetoclearancesubcategory_status INT DEFAULT FALSE;
+		DECLARE subcategory_clearance, origin_category INT;
+		DECLARE loop_cur1 CURSOR FOR SELECT `clearance`, `target` FROM `temp_clearance_subcategories_mapping`;
+		DECLARE CONTINUE HANDLER FOR NOT FOUND SET loop_movetoclearancesubcategory_status = TRUE;
+
+		OPEN loop_cur1;
+
+		loop_movetoclearancesubcategory: LOOP
+		FETCH loop_cur1 INTO subcategory_clearance, origin_category;
+
+		IF loop_movetoclearancesubcategory_status THEN
+		  LEAVE loop_movetoclearancesubcategory;
+		END IF;
+
+			CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `temp_target_category_fs_product", DBTABLE_SUFFIX, "`;"));
+			
+			CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `temp_target_category_fs_product", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT ", subcategory_clearance ," AS `category`, `product`.`id_product`, 0 AS `position` FROM `", PS_DBNAME, "product` AS `product` INNER JOIN `", PS_DBNAME, "category_summary` AS `summary` ON `product`.`id_category_default` = `summary`.`id_category` WHERE `summary`.`ParentLv1` = ", origin_category ," AND `product`.`active` = 1 AND CONCAT('", PRODUCT_PREFIX, "', `product`.`reference`) IN (SELECT DISTINCT `tab_prex_PRODUCTCODE` FROM `temp_fs_product", DBTABLE_SUFFIX, "` WHERE UPPER(`tab_prex_STATUS__C`) IN (UPPER('DISCONTINUED'), UPPER('SLOW'))) )"));
+			
+			CALL `SP_Exec_Qry`(CONCAT("INSERT IGNORE INTO `", PS_DBNAME, "category_product` (`id_category`, `id_product`, `position`) SELECT `category`, `id_product`, `position` FROM `temp_target_category_fs_product", DBTABLE_SUFFIX, "`;"));
+
+			CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product` SET `id_category_default` = ", subcategory_clearance ," WHERE `id_product` IN (SELECT DISTINCT `id_product` FROM `temp_target_category_fs_product", DBTABLE_SUFFIX, "`);"));
+			
+			CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product_shop` SET `id_category_default` = ", subcategory_clearance ," WHERE `id_shop` = 1 AND `id_product` IN (SELECT DISTINCT `id_product` FROM `temp_target_category_fs_product", DBTABLE_SUFFIX, "`);"));
+			
+			CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `temp_target_category_fs_product", DBTABLE_SUFFIX, "`;"));
+
+		END LOOP;
+
+		CLOSE loop_cur1;
+
+		DROP TEMPORARY TABLE IF EXISTS `temp_clearance_subcategories_mapping`;
+	END;
+	
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "category` SET `active` = 1 WHERE `id_category` IN (864, 865, 866, 867, 868, 869, 870, 871, 872, 873, 874, 875, 876);"));
+
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "category` SET `active` = 0 WHERE `id_category` NOT IN (SELECT DISTINCT CASE WHEN `summary`.`ParentLv2` > 3  THEN `summary`.`ParentLv2` ELSE `summary`.`id_category` END   FROM `", PS_DBNAME, "product` AS `product` INNER JOIN `", PS_DBNAME, "category_summary` AS `summary` ON `product`.`id_category_default` = `summary`.`id_category` WHERE `product`.`active` = 1 AND `summary`.`ParentLv1` = 856) AND `id_category` IN (864, 865, 866, 867, 868, 869, 870, 871, 872, 873, 874, 875, 876);"));
+END IF;
+
+CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `temp_fs_product", DBTABLE_SUFFIX, "`;"));
+
+SELECT 
+    CONCAT('Now to clean those DELETED items: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+
+/* Disable Products not in the DELETED */
+IF SUBSTRING(DBTABLE_SUFFIX, 2, 2) = 'targetnz' THEN
+	CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `temp_fs_product", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT `tab_prex_sf_product`.`NAME`, `tab_prex_sf_product`.`PRODUCTCODE`, `tab_prex_sf_product`.`ISACTIVE`, `tab_prex_sf_product`.`tab_prex_STATUS__C`,
+		CASE WHEN SUBSTRING(UPPER(`NAME`), 1, 3) = 'VK-' THEN CONCAT('", PRODUCT_PREFIX, "', `NAME`) ELSE `NAME` END AS `tab_prex_PRODUCTCODE`
+		FROM
+		`tab_prex_sf_product`
+	WHERE
+		UPPER(`tab_prex_STATUS__C`) IN (UPPER('DELETED')) AND `tab_prex_Database__C` = 'Flamestop7_NZ' ORDER BY NAME ASC )"));
+ELSE
+	CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `temp_fs_product", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT `tab_prex_sf_product`.`NAME`, `tab_prex_sf_product`.`PRODUCTCODE`, `tab_prex_sf_product`.`ISACTIVE`, `tab_prex_sf_product`.`tab_prex_STATUS__C`, CONCAT('", PRODUCT_PREFIX, "', `NAME`) AS `tab_prex_PRODUCTCODE`
+		FROM
+		`tab_prex_sf_product`
+	WHERE
+		UPPER(`tab_prex_STATUS__C`) IN (UPPER('DELETED')) AND `tab_prex_Database__C` = 'Flamestop7' ORDER BY NAME ASC )"));
+END IF;
+
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product` SET `active` = 0 WHERE CONCAT('", PRODUCT_PREFIX, "', `reference`) IN (SELECT DISTINCT `tab_prex_PRODUCTCODE` FROM `temp_fs_product", DBTABLE_SUFFIX, "` WHERE
+		UPPER(`tab_prex_STATUS__C`) IN (UPPER('DELETED')));"));
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product_shop` SET `active` = 0 WHERE `id_product` IN (SELECT DISTINCT `id_product` FROM `", PS_DBNAME, "product` WHERE `active` = 0) ;"));
+
+CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `temp_fs_product", DBTABLE_SUFFIX, "`;"));
+
+
+SELECT 
+    CONCAT('Now it ends: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+            
+SELECT 'The Products in Clearance Category has been recheck !!';
+
+
+SET sql_mode = 'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
+
+END

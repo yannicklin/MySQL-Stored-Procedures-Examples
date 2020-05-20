@@ -1,0 +1,10 @@
+DELETE from `sampledb`.`kuom_orders` where `id_order` in (54,55);
+DELETE from `sampledb`.`kuom_order_detail` where `id_order` in (54,55);
+DELETE from `sampledb`.`kuom_order_carrier` where `id_order` in (54,55);
+DELETE from `sampledb`.`kuom_order_invoice_payment` where `id_order_invoice` in (SELECT DISTINCT `id_order_invoice` FROM `sampledb`.`kuom_order_invoice` where `id_order` in (54,55));
+DELETE from `sampledb`.`kuom_order_invoice` where `id_order` in (54,55);
+DELETE from `sampledb`.`kuom_order_extra` where `id_order` in (54,55);
+DELETE from `sampledb`.`kuom_order_history` where `id_order` in (54,55);
+DELETE from `sampledb`.`kuom_order_payment` where `id_order_payment` in (SELECT DISTINCT `id_order_payment` FROM `sampledb`.`kuom_order_invoice_payment` where `id_order` in (54,55));
+DELETE from `sampledb`.`kuom_order_invoice_payment` where `id_order` in (54,55);
+DELETE from `sampledb`.`kuom_fmm_custom_userdata` where `id_order` in (54,55);

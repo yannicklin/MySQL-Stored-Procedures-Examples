@@ -1,0 +1,14 @@
+DELETE from `flamestop_targetnz_test`.`fsnz_address` where `id_customer` not in (89, 90);
+DELETE from `flamestop_targetnz_test`.`fsnz_customer` where `id_customer` not in (89, 90);
+DELETE from `flamestop_targetnz_test`.`fsnz_customer_group` where `id_customer` not in (89, 90);
+DELETE from `flamestop_targetnz_test`.`fsnz_customer_extra` where `id_customer` not in (89, 90);
+DELETE from `tab_prex_contact_customer_mapping_targetnz_test` where `id_customer` not in (89, 90);
+DELETE from `tab_prex_contact_import_issues_targetnz_test` where `tab_prex_id_customer` not in (89, 90);
+
+
+ALTER TABLE `flamestop_targetnz_test`.`fsnz_address` AUTO_INCREMENT = 1;
+ALTER TABLE `flamestop_targetnz_test`.`fsnz_customer` AUTO_INCREMENT = 1;
+ALTER TABLE `flamestop_targetnz_test`.`fsnz_customer_group` AUTO_INCREMENT = 1;
+ALTER TABLE `flamestop_targetnz_test`.`fsnz_customer_extra` AUTO_INCREMENT = 1;
+ALTER TABLE `tab_prex_contact_customer_mapping_targetnz_test` AUTO_INCREMENT = 1;
+ALTER TABLE `tab_prex_contact_import_issues_targetnz_test` AUTO_INCREMENT = 1;

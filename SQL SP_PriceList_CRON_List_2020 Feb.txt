@@ -1,0 +1,210 @@
+BEGIN
+ DECLARE PS_DBNAME VARCHAR(50);
+ DECLARE DBTABLE_SUFFIX VARCHAR(50);
+ DECLARE PRODUCT_PREFIX VARCHAR(50);
+ DECLARE JIWA_DBTABLE_SUFFIX VARCHAR(50);
+ 
+ SET sql_mode = 'ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
+ 
+ SET SERVER_TARGET = IFNULL(SERVER_TARGET, 'au-lego');
+ IF SERVER_TARGET = 'au-lego' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+	SET JIWA_DBTABLE_SUFFIX = '';
+ ELSEIF SERVER_TARGET = 'target_test' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+	SET JIWA_DBTABLE_SUFFIX = '';
+ ELSEIF SERVER_TARGET = 'target' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+	SET JIWA_DBTABLE_SUFFIX = '';
+ ELSEIF SERVER_TARGET = 'nz-lego' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+	SET JIWA_DBTABLE_SUFFIX = '_NZ';
+ ELSEIF SERVER_TARGET = 'targetnz_test' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+	SET JIWA_DBTABLE_SUFFIX = '_NZ';
+ ELSEIF SERVER_TARGET = 'targetnz' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+	SET JIWA_DBTABLE_SUFFIX = '_NZ';
+ ELSE
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = '_au-lego';
+	SET PRODUCT_PREFIX = '';
+	SET JIWA_DBTABLE_SUFFIX = '';
+ END IF;
+ 
+SELECT 'This procedure is to create/update the cron list for price list batch gerenation of customer accounts.';
+SELECT 
+    CONCAT('Now it starts: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+
+/* COLLECT Account Table */
+CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `tab_prex_account_pricelist", DBTABLE_SUFFIX, "`"));
+CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `tab_prex_account_pricelist", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT DISTINCT
+	`tab_prex_sf_account`.`ID` AS `sf_account_id`,
+	`tab_prex_sf_account`.`NAME` AS `sf_account_name`,
+	UPPER(`tab_prex_sf_account`.`tab_prex_JIWA_ACCOUNT_NO__C`) AS `jiwa_account_no`,
+	`tab_prex_sf_account`.`tab_prex_BRANCH__C` AS `branch`,
+	`tab_prex_sf_account`.`Price_Lists_CSV_File__c`,
+	`tab_prex_sf_account`.`Price_Lists_PDF__c`,
+	`tab_prex_sf_account`.`Price_Lists_simPRO__c`,
+	`tab_prex_sf_user`.`NAME`,
+	`tab_prex_sf_user`.`EMAIL`
+FROM
+    `tab_prex_sf_account`
+	INNER JOIN `tab_prex_sf_user` ON `tab_prex_sf_account`.`OWNERID` = `tab_prex_sf_user`.`ID`
+WHERE
+    `tab_prex_sf_account`.`tab_prex_ACTIVE__C` = 1 AND UPPER(`tab_prex_sf_account`.`tab_prex_DATABASE__C`) = UPPER('Flamestop7", JIWA_DBTABLE_SUFFIX, "') AND `tab_prex_sf_user`.`ISACTIVE` = 1 )"));
+CALL `SP_Exec_Qry`(CONCAT("ALTER TABLE `tab_prex_account_pricelist", DBTABLE_SUFFIX, "` ADD PRIMARY KEY(`sf_account_id`);"));
+
+
+/* Disable Those Not-exisitng Customer Account CRON List */
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_cron_pricelist", DBTABLE_SUFFIX, "` 
+SET 
+	`enable_pdf` = 0, `enable_csv` = 0, `enable_simpro` = 0, `priority` = 0, `upd_date` = NOW(), `sysdate` = NOW()
+WHERE 
+	`sf_account_id` NOT IN (SELECT DISTINCT `sf_account_id` FROM `tab_prex_account_pricelist", DBTABLE_SUFFIX, "`);"));
+
+SELECT 
+    CONCAT('Non-existing Records Updated. ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+
+/* UPDATE the DATE_TIME if any updates and all existing request has been executed */
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_cron_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_cron_pricelist` 
+INNER JOIN `tab_prex_account_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_account_pricelist`
+ON `tab_prex_cron_pricelist`.`sf_account_id` = `tab_prex_account_pricelist`.`sf_account_id`
+AND `tab_prex_cron_pricelist`.`csv_status` IN ('NONE', 'DONE')
+AND `tab_prex_cron_pricelist`.`simpro_status` IN ('NONE', 'DONE')
+AND `tab_prex_cron_pricelist`.`pdf_status` IN ('NONE', 'DONE')
+AND  ( `tab_prex_account_pricelist`.`Price_Lists_CSV_File__c` != `tab_prex_cron_pricelist`.`enable_csv`
+OR  `tab_prex_account_pricelist`.`Price_Lists_simPRO__c` != `tab_prex_cron_pricelist`.`enable_simpro`
+OR  `tab_prex_account_pricelist`.`Price_Lists_PDF__c` != `tab_prex_cron_pricelist`.`enable_pdf` )
+SET 
+	`tab_prex_cron_pricelist`.`upd_date` = NOW(), `tab_prex_cron_pricelist`.`sysdate` = NOW();"));
+
+/* Update the exisitng Customer Account CRON List */
+/* Update the name, email of the account manager */
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_cron_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_cron_pricelist` 
+INNER JOIN `tab_prex_account_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_account_pricelist`
+ON `tab_prex_cron_pricelist`.`sf_account_id` = `tab_prex_account_pricelist`.`sf_account_id`
+SET 
+	`tab_prex_cron_pricelist`.`sf_account_name` = `tab_prex_account_pricelist`.`sf_account_name`, `tab_prex_cron_pricelist`.`sf_account_owner` = `tab_prex_account_pricelist`.`NAME`, `tab_prex_cron_pricelist`.`sf_account_owner_email` = `tab_prex_account_pricelist`.`EMAIL` ;"));
+
+/* Update CSV status */
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_cron_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_cron_pricelist` 
+INNER JOIN `tab_prex_account_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_account_pricelist`
+ON `tab_prex_cron_pricelist`.`sf_account_id` = `tab_prex_account_pricelist`.`sf_account_id`
+AND `tab_prex_account_pricelist`.`Price_Lists_simPRO__c`= 1
+AND `tab_prex_cron_pricelist`.`enable_simpro` = 0
+SET 
+	`tab_prex_cron_pricelist`.`enable_simpro` = 1, `tab_prex_cron_pricelist`.`simpro_status` = 'READY', `tab_prex_cron_pricelist`.`priority` = 10 , `tab_prex_cron_pricelist`.`sysdate` = NOW();"));
+	
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_cron_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_cron_pricelist` 
+INNER JOIN `tab_prex_account_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_account_pricelist`
+ON `tab_prex_cron_pricelist`.`sf_account_id` = `tab_prex_account_pricelist`.`sf_account_id`
+AND `tab_prex_account_pricelist`.`Price_Lists_simPRO__c`= 0
+AND `tab_prex_cron_pricelist`.`enable_simpro` = 1
+SET 
+	`tab_prex_cron_pricelist`.`enable_simpro` = 0, `tab_prex_cron_pricelist`.`simpro_status` = 'NONE', `tab_prex_cron_pricelist`.`priority` = 0 , `tab_prex_cron_pricelist`.`sysdate` = NOW();"));
+
+/* Update SIMPRO Status */
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_cron_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_cron_pricelist` 
+INNER JOIN `tab_prex_account_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_account_pricelist`
+ON `tab_prex_cron_pricelist`.`sf_account_id` = `tab_prex_account_pricelist`.`sf_account_id`
+AND `tab_prex_account_pricelist`.`Price_Lists_CSV_File__c`= 1
+AND `tab_prex_cron_pricelist`.`enable_csv` = 0
+SET 
+	`tab_prex_cron_pricelist`.`enable_csv` = 1, `tab_prex_cron_pricelist`.`csv_status` = 'READY', `tab_prex_cron_pricelist`.`priority` = 10 , `tab_prex_cron_pricelist`.`sysdate` = NOW();"));
+	
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_cron_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_cron_pricelist` 
+INNER JOIN `tab_prex_account_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_account_pricelist`
+ON `tab_prex_cron_pricelist`.`sf_account_id` = `tab_prex_account_pricelist`.`sf_account_id`
+AND `tab_prex_account_pricelist`.`Price_Lists_CSV_File__c`= 0
+AND `tab_prex_cron_pricelist`.`enable_csv` = 1
+SET 
+	`tab_prex_cron_pricelist`.`enable_csv` = 0, `tab_prex_cron_pricelist`.`csv_status` = 'NONE', `tab_prex_cron_pricelist`.`priority` = 0 , `tab_prex_cron_pricelist`.`sysdate` = NOW();"));
+	
+/* Update PDF Status */
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_cron_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_cron_pricelist` 
+INNER JOIN `tab_prex_account_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_account_pricelist`
+ON `tab_prex_cron_pricelist`.`sf_account_id` = `tab_prex_account_pricelist`.`sf_account_id`
+AND `tab_prex_account_pricelist`.`Price_Lists_PDF__c`= 1
+AND `tab_prex_cron_pricelist`.`enable_pdf` = 0
+SET 
+	`tab_prex_cron_pricelist`.`enable_pdf` = 1, `tab_prex_cron_pricelist`.`pdf_status` = 'READY', `tab_prex_cron_pricelist`.`priority` = 10 , `tab_prex_cron_pricelist`.`sysdate` = NOW();"));
+	
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_cron_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_cron_pricelist` 
+INNER JOIN `tab_prex_account_pricelist", DBTABLE_SUFFIX, "` AS `tab_prex_account_pricelist`
+ON `tab_prex_cron_pricelist`.`sf_account_id` = `tab_prex_account_pricelist`.`sf_account_id`
+AND `tab_prex_account_pricelist`.`Price_Lists_PDF__c`= 0
+AND `tab_prex_cron_pricelist`.`enable_pdf` = 1
+SET 
+	`tab_prex_cron_pricelist`.`enable_pdf` = 0, `tab_prex_cron_pricelist`.`pdf_status` = 'NONE', `tab_prex_cron_pricelist`.`priority` = 0 , `tab_prex_cron_pricelist`.`sysdate` = NOW();"));
+
+
+SELECT 
+    CONCAT('Existing Records Updated. ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+			
+
+/* CLEAN The existing records, Prepare for the New Append List */
+CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `tab_prex_account_pricelist", DBTABLE_SUFFIX, "` WHERE `sf_account_id` IN (SELECT DISTINCT
+            `sf_account_id`
+        FROM
+            `tab_prex_cron_pricelist", DBTABLE_SUFFIX, "`);"));
+
+/* Create New Customer Accounr CRON List records */
+CALL `SP_Exec_Qry`(CONCAT("INSERT IGNORE INTO `tab_prex_cron_pricelist", DBTABLE_SUFFIX, "` 
+SELECT 
+	`sf_account_id`, 
+	`sf_account_name`, 
+	`jiwa_account_no` AS `jiwa_account_no`, 
+	`branch`, 
+	`NAME`,
+	`EMAIL`,
+	`Price_Lists_PDF__c` AS `enable_pdf`, 
+	`Price_Lists_CSV_File__c` AS `enable_csv`, 
+	`Price_Lists_simPRO__c` AS `enable_simpro`, 
+	NULL AS `pdf_categories`, 
+	IF(`Price_Lists_PDF__c` = 1, 'READY', 'NONE') AS `pdf_status`, 
+	IF(`Price_Lists_CSV_File__c` = 1, 'READY', 'NONE') AS `csv_status`, 
+	IF(`Price_Lists_simPRO__c` = 1, 'READY', 'NONE') AS `simpro_status`, 
+	NOW() AS `update_date`,
+	99 AS `priority`,
+	NOW() AS `sysdate`
+FROM `tab_prex_account_pricelist", DBTABLE_SUFFIX, "` ;"));
+
+SELECT 
+    CONCAT('New Records Appened. ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+
+CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `tab_prex_account_pricelist", DBTABLE_SUFFIX, "`"));
+
+SELECT 
+    CONCAT('Now it ends: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+            
+SELECT 'The PriceList for Batch Processing has been re-composed !';
+
+SET sql_mode = 'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
+
+END

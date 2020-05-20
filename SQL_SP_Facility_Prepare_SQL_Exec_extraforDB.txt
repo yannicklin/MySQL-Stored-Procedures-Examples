@@ -1,0 +1,7 @@
+CREATE PROCEDURE SP_Exec_Qry_OtherDB( db_p_sql varchar(4096))
+BEGIN
+  SET @db_tquery = db_p_sql;
+  PREPARE dbstmt FROM @db_tquery;
+  EXECUTE dbstmt;
+  DEALLOCATE PREPARE dbstmt;
+END 

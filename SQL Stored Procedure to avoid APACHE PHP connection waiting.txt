@@ -1,0 +1,5 @@
+CREATE DEFINER=`root`@`root` PROCEDURE `SP_avoid_PHP_WEB_connection_limit`()
+BEGIN
+ SET @RUNNING_RESULT = '0';
+ CALL `data_mapping`.`SP_Create_Product_Client_Price_Matrix`(@RUNNING_RESULT);
+END

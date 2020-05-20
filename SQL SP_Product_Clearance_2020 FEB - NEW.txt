@@ -1,0 +1,454 @@
+BEGIN
+ DECLARE PS_DBNAME VARCHAR(50);
+ DECLARE batch INT;
+ DECLARE batch_size INT;
+ DECLARE start_point INT;
+ DECLARE DBTABLE_SUFFIX VARCHAR(50);
+ DECLARE PRODUCT_PREFIX VARCHAR(50);
+ 
+ SET sql_mode = 'ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
+ SET max_sp_recursion_depth=255;
+ 
+ SET batch = 200;
+ SET batch_size = 100;
+ SET start_point = 0;
+ 
+ SET SERVER_TARGET = IFNULL(SERVER_TARGET, 'au-lego');
+ 
+IF ((SUBSTRING(SERVER_TARGET, 3, 1) = '-')  AND (SUBSTRING(SERVER_TARGET, 1, 2) = 'target')) THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+ELSEIF ((SUBSTRING(SERVER_TARGET, 3, 1) = '-')  AND (SUBSTRING(SERVER_TARGET, 1, 2) = 'targetnz')) THEN	
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+ELSEIF SUBSTRING(SERVER_TARGET, 1, 2) = 'target' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+ELSEIF SUBSTRING(SERVER_TARGET, 1, 2) = 'targetnz' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+ELSE
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = '_au-lego';
+	SET PRODUCT_PREFIX = '';
+END IF; 
+ 
+SELECT 'This procedure is to mark the products to Clearance category based on SaleFoce/JIWA.';
+SELECT 'All data are come from SalesForce without modifications.';
+SELECT 
+    CONCAT('Now it starts: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `temp_fs_product", DBTABLE_SUFFIX, "`;"));
+
+IF SUBSTRING(DBTABLE_SUFFIX, 2, 2) = 'targetnz' THEN
+	CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `temp_fs_product", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT `tab_prex_sf_product`.`NAME`, `tab_prex_sf_product`.`PRODUCTCODE`, `tab_prex_sf_product`.`ISACTIVE`, `tab_prex_sf_product`.`tab_prex_STATUS__C`,
+		CASE WHEN SUBSTRING(UPPER(`NAME`), 1, 3) = 'VK-' THEN CONCAT('", PRODUCT_PREFIX, "', `NAME`) ELSE `NAME` END AS `tab_prex_PRODUCTCODE`
+		FROM
+		`tab_prex_sf_product`
+	WHERE
+		UPPER(`tab_prex_STATUS__C`) IN (UPPER('ACTIVE'), UPPER('DISCONTINUED'), UPPER('SLOW'), UPPER('OBSOLETE')) AND `tab_prex_Database__C` = 'Flamestop7_NZ' ORDER BY NAME ASC )"));
+ELSE
+	CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `temp_fs_product", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT `tab_prex_sf_product`.`NAME`, `tab_prex_sf_product`.`PRODUCTCODE`, `tab_prex_sf_product`.`ISACTIVE`, `tab_prex_sf_product`.`tab_prex_STATUS__C`, CONCAT('", PRODUCT_PREFIX, "', `NAME`) AS `tab_prex_PRODUCTCODE`
+		FROM
+		`tab_prex_sf_product`
+	WHERE
+		UPPER(`tab_prex_STATUS__C`) IN (UPPER('ACTIVE'), UPPER('DISCONTINUED'), UPPER('SLOW'), UPPER('OBSOLETE')) AND `tab_prex_Database__C` = 'Flamestop7' ORDER BY NAME ASC )"));
+END IF;
+			
+CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `temp_fs_product", DBTABLE_SUFFIX, "` WHERE `tab_prex_PRODUCTCODE` NOT IN (SELECT DISTINCT
+            `unireference`
+        FROM
+            ((SELECT DISTINCT CONCAT('", PRODUCT_PREFIX, "', `reference`) AS `unireference` FROM `", PS_DBNAME, "product`
+        WHERE
+            `active` = 1) 
+			UNION
+			SELECT DISTINCT CONCAT('", PRODUCT_PREFIX, "', `reference`) AS `unireference` FROM `", PS_DBNAME, "product_attribute` WHERE `id_product` IN (SELECT DISTINCT `id_product` FROM `", PS_DBNAME, "product`
+        WHERE
+            `active` = 1)) AS `product_reference_list` );"));
+
+
+/* Manual Force Products out of Clearance */
+/*
+IF SUBSTRING(DBTABLE_SUFFIX, 2, 2) = 'targetnz' THEN
+	SELECT 'Nothing to go with yet.';
+ELSE
+	CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `", PS_DBNAME, "category_product` WHERE CONCAT('", PRODUCT_PREFIX, "', `reference`) IN (SELECT DISTINCT `tab_prex_PRODUCTCODE` FROM `temp_fs_product", DBTABLE_SUFFIX, "` WHERE UPPER(`tab_prex_STATUS__C`) IN (UPPER('ACTIVE'))) AND `id_category` IN (856, 864, 865, 866, 867, 868, 869, 870, 871, 872, 873, 874, 875, 876) "));
+END IF;
+*/
+
+
+/* Remove out of Clearance if resumed as "Active" */
+CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `", PS_DBNAME, "category_product` WHERE `id_product` IN (SELECT DISTINCT `product`.`id_product`
+ FROM `temp_fs_product", DBTABLE_SUFFIX, "` AS `temp_fs_product` INNER JOIN `", PS_DBNAME, "product` AS `product` ON `temp_fs_product`.`tab_prex_PRODUCTCODE` = CONCAT('", PRODUCT_PREFIX, "', `product`.`reference`) WHERE UPPER(`temp_fs_product`.`tab_prex_STATUS__C`) IN (UPPER('ACTIVE')) AND `product`.`active` = 1) AND `id_category` IN (SELECT DISTINCT `id_category` FROM `", PS_DBNAME, "category_summary` WHERE `id_category` IN (856) OR `ParentLv1` IN (856));"));
+
+CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `temp_fs_product", DBTABLE_SUFFIX, "` WHERE UPPER(`tab_prex_STATUS__C`) IN (UPPER('ACTIVE'));"));
+
+/* Add Products to Clearance */
+CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `temp_fs_product", DBTABLE_SUFFIX, "` WHERE `tab_prex_PRODUCTCODE` IN (SELECT DISTINCT CONCAT('", PRODUCT_PREFIX, "', `product`.`reference`) AS `unireference`
+        FROM `", PS_DBNAME, "category_product` AS `category_product` INNER JOIN `", PS_DBNAME, "product` AS `product` ON `product`.`id_product` = `category_product`.`id_product`
+        WHERE `category_product`.`id_category` IN (856)) AND UPPER(`tab_prex_STATUS__C`) IN (UPPER('DISCONTINUED'), UPPER('SLOW'));"));
+		
+IF SUBSTRING(DBTABLE_SUFFIX, 2, 2) = 'targetnz' THEN
+	SELECT 'Nothing to go with yet.';
+ELSE
+	CALL `SP_Exec_Qry`(CONCAT("INSERT IGNORE INTO `", PS_DBNAME, "category_product` (`id_category`, `id_product`, `position`) SELECT 856 AS `category`, `id_product`, 0 AS `position` FROM `", PS_DBNAME, "product` WHERE `active` = 1 AND CONCAT('", PRODUCT_PREFIX, "', `reference`) IN (SELECT DISTINCT `tab_prex_PRODUCTCODE` FROM `temp_fs_product", DBTABLE_SUFFIX, "` WHERE UPPER(`tab_prex_STATUS__C`) IN (UPPER('DISCONTINUED'), UPPER('SLOW')));"));
+
+	/* Run Loop for Append the subcategory of Clearance and make as default for the Obsolete products */
+	DROP TEMPORARY TABLE IF EXISTS `temp_clearance_subcategories_mapping`;
+	
+	CREATE TEMPORARY TABLE `temp_clearance_subcategories_mapping` (`clearance` INT, `origin` INT, `conds` VARCHAR(200)) ENGINE=MEMORY;
+	
+	/* == Category Section : Portable Fire Equipment == */
+	/* Lv2: Portable Fire Extinguishers 128 -> 1278 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1278, 128, 'Lv2` = ');
+	/* Lv2: Mobile Fire Extinguishers 136 -> 1279 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1279, 136, 'Lv2` = ');
+	/* Lv2: Fire Extinguisher Vehicle Brackets 150 -> 1280 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1280, 150, 'Lv2` = ');
+	/* Lv2: Fire Extinguisher Cabinets & Covers 742 -> 1281 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1281, 742, 'Lv2` = ');
+	/* Lv2: Fire Extinguisher Servicing Tools & Consumables 30 -> 1282 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1282, 30, 'Lv2` = ');
+	/* Lv2: Fire Blankets 132 -> 1283 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1283, 132, 'Lv2` = ');
+	/* Lv2: Fire Hose Reels 55 -> 1284 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1284, 55, 'Lv2` = ');
+	/* Lv2: Fire Hydrant Landing Valves & Equipment 9 -> 1285 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1285, 9, 'Lv2` = ');
+	/* Lv2: Hoses, Nozzles & Adapters 4 -> 1286 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1286, 4, 'Lv2` = ');
+	/* Lv2: Extinguisher Spare Parts 16 -> 1287 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1287, 16, 'Lv2` = ');
+	/* Lv2: Recharge Equipment 332 -> 1288 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1288, 332, 'Lv2` = ');
+	/* Lv2: Sirens 296 -> 1289 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1289, 296, 'Lv2` = ');
+	/* Lv2: Knapsacks 299 -> 1290 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1290, 299, 'Lv2` = ');
+	/* Lv1: Portable Fire Equipment 3 -> 864 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (864, 3, 'Lv1` = ');
+	
+	/* == Category Section : AS1851 Testing Equipment == */
+	/* Lv2: Solo 365 Test Kit & Accessories 646 -> 1291 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1291, 646, 'Lv2` = ');
+	/* Lv2: Solo Kits 1246 -> 1292 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1292, 1246, 'Lv2` = ');
+	/* Lv2: Testifire Kits 435 -> 1293 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1293, 435, 'Lv2` = ');
+	/* Lv2: Smoke & Heat Heads 436 -> 1294 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1294, 436, 'Lv2` = ');
+	/* Lv2: TruTest Smoke Detector Sensitivity Kits 54 -> 1295 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1295, 54, 'Lv2` = ');
+	/* Lv2: Smoke Cans & Capsules 42 -> 1296 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1296, 42, 'Lv2` = ');
+	/* Lv2: Smoke Bombs & Smoke Pens 177 -> 1297 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1297, 177, 'Lv2` = ');
+	/* Lv2: Poles 438 -> 1298 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1298, 438, 'Lv2` = ');
+	/* Lv2: Battery Charger & Batons 439 -> 1299 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1299, 439, 'Lv2` = ');
+	/* Lv2: Removal Tools 440 -> 1300 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1300, 440, 'Lv2` = ');
+	/* Lv2: Accessories 441 -> 1301 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1301, 441, 'Lv2` = ');
+	/* Lv2: Universal Flame Detector Testers 442 -> 1302 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1302, 442, 'Lv2` = ');
+	/* Lv2: Scorpion Remote Detector Testers 230 -> 1303 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1303, 230, 'Lv2` = ');
+	/* Lv2: Digital Multimeters 548 -> 1304 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1304, 548, 'Lv2` = ');
+	/* Lv2: VOX Speech Intelligibility Test Kits 786 -> 1305 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1305, 786, 'Lv2` = ');
+	/* Lv2: Speaker Testing Equipment 787 -> 1306 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1306, 787, 'Lv2` = ');
+	/* Lv2: Battery Function Testers 788 -> 1307 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1307, 788, 'Lv2` = ');
+	/* Lv2: Cyclone Canless Air Systems 789 -> 1308 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1308, 789, 'Lv2` = ');
+	/* Lv2: Digital Light Meters 791 -> 1309 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1309, 791, 'Lv2` = ');
+	/* Lv2: Ultrasonic Liquid Level Test Kits 792 -> 1310 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1310, 792, 'Lv2` = ');
+	/* Lv2: Extinguisher Service Tools 793 -> 1311 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1311, 793, 'Lv2` = ');
+	/* Lv2: Measuring Scales 794 -> 1312 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1312, 794, 'Lv2` = ');
+	/* Lv1: AS1851 19 -> 865 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (865, 19, 'Lv1` = ');
+
+	/* == Category Section : Fire Detection Systems == */
+	/* Lv2: FlameStop Addressable Fire Alarm Systems 347 -> 1278 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1313, 347, 'Lv2` = ');
+	/* Lv2: EST3X Addressable Fire Alarm Systems 795 -> 1278 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1314, 795, 'Lv2` = ');
+	/* Lv2: Conventional Fire Alarm Systems & Field Devices 357 -> 1278 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1315, 357, 'Lv2` = ');
+	/* Lv2: Batteries 22 -> 1278 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1316, 22, 'Lv2` = ');
+	/* Lv2: Cable 56 -> 1278 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1317, 56, 'Lv2` = ');
+	/* Lv2: Evacuation Speakers 27 -> 1278 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1318, 27, 'Lv2` = ');
+	/* Lv2: Smoke, Heat, Co Alarms & Accessories 105 -> 1278 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1319, 105, 'Lv2` = ');
+	/* Lv2: Warning Systems 24 -> 1278 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1322, 24, 'Lv2` = ');
+	/* Lv2: Ancillaries 233 -> 1278 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1323, 233, 'Lv2` = ');
+	/* Lv2: Power Supplies 14 -> 1278 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1324, 14, 'Lv2` = ');
+	/* Lv2: Miscellaneous Tools & Items 7 -> 1278 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1325, 7, 'Lv2` = ');
+	/* Lv2: Gas Panel Accessoriess 746 -> 1278 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1326, 746, 'Lv2` = ');
+	/* Lv2: Flame Detection 83 -> 1278 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1327, 83, 'Lv2` = ');
+	/* Lv1: Fire Detection System 6 -> 866 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (866, 6, 'Lv1` = ');
+	
+	/* == Category Section : VESDA ASD Detectors == */
+	/* Lv2: VESDA ASD Detectors 429 -> 1330 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1330, 429, 'Lv2` = ');
+	/* Lv2: VESDA LCD Programmer & High Level Interfaces 154 -> 1331 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1331, 154, 'Lv2` = ');
+	/* Lv2: Filters & Spare Parts 89 -> 1332 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1332, 89, 'Lv2` = ');
+	/* Lv2: Pipe and Fittings 110 -> 1333 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1333, 110, 'Lv2` = ');
+	/* Lv2: Automatic Purging System 835 -> 1334 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1334, 835, 'Lv2` = ');
+	/* Lv2: VESDA ECO 555 -> 1335 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1335, 555, 'Lv2` = ');
+	/* Lv2: VESDA Remote Displays 178 -> 1336 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1336, 178, 'Lv2` = ');
+	/* Lv2: 19" Rackmount Configurations 265 -> 1337 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1337, 265, 'Lv2` = ');
+	/* Lv2: OSID Emitters & Imagers 70 -> 1338 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1338, 70, 'Lv2` = ');
+	/* Lv1: VESDA 47 -> 867 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (867, 47, 'Lv1` = ');
+
+	/* == Category Section : Exit & Emergency Lighting == */
+	/* Lv2: LED Exit Lighting 199 -> 1339 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1339, 199, 'Lv2` = ');
+	/* Lv2: LED Emergency Lighting 198 -> 1340 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1340, 198, 'Lv2` = ');
+	/* Lv2: LED Emergency Battens 165 -> 1341 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1341, 165, 'Lv2` = ');
+	/* Lv1: Exit & Emergency Lighting 164 -> 868 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (868, 164, 'Lv1` = ');
+	
+	/* == Category Section : Suppresion == */
+	/* Lv2: Stat-X Aerosol Fire Suppression 516 -> 1342 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1342, 516, 'Lv2` = ');
+	/* Lv2: Fixed Systems 11 -> 1343 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1343, 11, 'Lv2` = ');
+	/* Lv2: Coltraco - Ultrasonic & Safety Instrumentation 546 -> 1344 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1344, 546, 'Lv2` = ');
+	/* Lv1: Suppresion 718 -> 869 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (869, 718, 'Lv1` = ');
+	
+	
+	/* == Category Section : Fire Fight Foam == */
+	/* Lv2: FlameStop Eco Foam 715 -> 1345 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1345, 715, 'Lv2` = ');
+	/* Lv2: Orchidee Foam 716 -> 1346 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1346, 716, 'Lv2` = ');
+	/* Lv1: Fire Fight Foam 545 -> 870 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (870, 545, 'Lv1` = ');
+	
+	/* == Category Section : Fire Sprinkler (No Sync in subcategories) == */
+	/* Fire Sprinkler 598 -> 871 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (871, 598, 'Lv1` = ');
+	
+	/* == Category Section : Passive Fire Equipment == */
+	/* Lv2: Cable Transits 564 -> 1382 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1382, 564, 'Lv2` = ');
+	/* Lv2: Fire Rated Boards & Batts 559 -> 1383 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1383, 559, 'Lv2` = ');
+	/* Lv2: Fire Collars 568 -> 1384 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1384, 568, 'Lv2` = ');
+	/* Lv2: Maxi-Fire Collars 567 -> 1385 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1385, 567, 'Lv2` = ');
+	/* Lv2: Wraps 570 -> 1386 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1386, 570, 'Lv2` = ');
+	/* Lv2: Fire Door & Gap Seals 588 -> 1387 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1387, 588, 'Lv2` = ');
+	/* Lv2: Fire Rated Downlight Covers 778 -> 1388 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1388, 778, 'Lv2` = ');
+	/* Lv2: Fire Rated Sealants & Mastics 575 -> 1389 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1389, 575, 'Lv2` = ');
+	/* Lv2: Fire Pillows 581 -> 1390 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1390, 581, 'Lv2` = ');
+	/* Lv2: Mortar & Putty 777 -> 1391 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1391, 777, 'Lv2` = ');
+	/* Lv2: Fire Door Supplies 780 -> 1392 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1392, 780, 'Lv2` = ');
+	/* Lv2: Tools & Accessories 1373 -> 1393 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1393, 1373, 'Lv2` = ');
+	/* Passive Fire Equipment 558 -> 872 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (872, 558, 'Lv1` = ');
+	
+	/* == Category Section : PPE Safety Equipment == */
+	/* Lv2: Head & Hearing Protection 624 -> 1347 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1347, 624, 'Lv2` = ');
+	/* Lv2: Safety Glasses 625 -> 1348 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1348, 625, 'Lv2` = ');
+	/* Lv2: Respirators 626 -> 1349 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1349, 626, 'Lv2` = ');
+	/* Lv2: Gloves 627 -> 1350 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1350, 627, 'Lv2` = ');
+	/* Lv2: Coveralls & Safety Vests 628 -> 1351 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1351, 628, 'Lv2` = ');
+	/* Lv2: Eye/Face Wash 397 -> 1352 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1352, 397, 'Lv2` = ');
+	/* Lv1: PPE Safety 623 -> 873 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (873, 6213, 'Lv1` = ');
+	
+	/* == Category Section : Cabinet == */
+	/* Lv2: Extinguisher Cabinets 427 -> 1353 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1353, 427, 'Lv2` = ');
+	/* Lv2: Extinguisher UV Bags 386 -> 1354 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1354, 386, 'Lv2` = ');
+	/* Lv2: Extinguisher Covers 112 -> 1355 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1355, 112, 'Lv2` = ');
+	/* Lv2: Safety Hammers 554 -> 1356 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1356, 554, 'Lv2` = ');
+	/* Lv2: Sprinkler & Essential Service Cabinets 391 -> 1357 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1357, 391, 'Lv2` = ');
+	/* Lv2: Hose Reel Cabinets 388 -> 1358 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1358, 388, 'Lv2` = ');
+	/* Lv2: Lay Flat Hose Cabinets 1249 -> 1359 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1359, 1249, 'Lv2` = ');
+	/* Lv2: Baseline Data & Termination Cabinets 335 -> 1360 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1360, 335, 'Lv2` = ');
+	/* Lv2: WIP Phone Cabinet 338 -> 1361 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1361, 338, 'Lv2` = ');
+	/* Lv2: Storage Cabinets with Vinyl Text 124 -> 1362 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1362, 124, 'Lv2` = ');
+	/* Lv2: Cabinet Locks 272 -> 1363 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1363, 272, 'Lv2` = ');
+	/* Lv2: Replacement Glass & Perspex 273 -> 1364 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1364, 273, 'Lv2` = ');
+	/* Lv1: Cabinet 8 -> 874 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (874, 8, 'Lv1` = ');
+	
+	/* == Category Section : Hardware & Fasterner == */
+	/* Lv2: Hardware 664 -> 1365 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1365, 664, 'Lv2` = ');
+	/* Lv2: Fixings & Fasteners 663 -> 1366 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1366, 663, 'Lv2` = ');
+	/* Lv2: Sealants & Adhesives 665 -> 1367 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1367, 665, 'Lv2` = ');
+	/* Lv1: Hardware & Fasterner 662 -> 875 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (875, 662, 'Lv1` = ');
+	
+	/* == Category Section : Signage == */
+	/* Lv2: Signs and Labels 39 -> 1368 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1368, 39, 'Lv2` = ');
+	/* Lv2: Engraved Signs 214 -> 1369 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1369, 214, 'Lv2` = ');
+	/* Lv2: Vinyl Cut Lettering 490 -> 1370 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1370, 490, 'Lv2` = ');
+	/* Lv2: Block Plans & Evac Plans 498 -> 1371 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1371, 498, 'Lv2` = ');
+	/* Lv2: Snap Frames 859 -> 1372 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (1372, 859, 'Lv2` = ');
+	/* Signage 231 -> 876 */
+	INSERT IGNORE INTO `temp_clearance_subcategories_mapping` (`clearance`, `origin`, `conds`) VALUES (876, 231, 'Lv1` = ');
+	
+	BEGIN
+		DECLARE loop_movetoclearancesubcategory_status INT DEFAULT FALSE;
+		DECLARE subcategory_clearance INT;
+		DECLARE origin_category_id INT;
+		DECLARE origin_category_cond VARCHAR(200);
+		DECLARE loop_cur1 CURSOR FOR SELECT `clearance`, `origin`, `conds` FROM `temp_clearance_subcategories_mapping`;
+		DECLARE CONTINUE HANDLER FOR NOT FOUND SET loop_movetoclearancesubcategory_status = TRUE;
+
+		OPEN loop_cur1;
+
+		loop_movetoclearancesubcategory: LOOP
+		FETCH loop_cur1 INTO subcategory_clearance, origin_category_id, origin_category_cond;
+
+		IF loop_movetoclearancesubcategory_status THEN
+		  LEAVE loop_movetoclearancesubcategory;
+		END IF;
+
+			CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `temp_target_category_fs_product", DBTABLE_SUFFIX, "`;"));
+			
+			CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `temp_target_category_fs_product", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT ", subcategory_clearance ," AS `category`, `product`.`id_product`, 0 AS `position` FROM `", PS_DBNAME, "product` AS `product` INNER JOIN `", PS_DBNAME, "category_summary` AS `summary` ON `product`.`id_category_default` = `summary`.`id_category` WHERE (`summary`.`id_category` = ", origin_category_id, " OR `summary`.`Parent", origin_category_cond, origin_category_id, ") AND `product`.`active` = 1 AND CONCAT('", PRODUCT_PREFIX, "', `product`.`reference`) IN (SELECT DISTINCT `tab_prex_PRODUCTCODE` FROM `temp_fs_product", DBTABLE_SUFFIX, "` WHERE UPPER(`tab_prex_STATUS__C`) IN (UPPER('DISCONTINUED'), UPPER('SLOW'))) )"));
+			
+			CALL `SP_Exec_Qry`(CONCAT("INSERT IGNORE INTO `", PS_DBNAME, "category_product` (`id_category`, `id_product`, `position`) SELECT `category`, `id_product`, `position` FROM `temp_target_category_fs_product", DBTABLE_SUFFIX, "`;"));
+			
+			CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `temp_target_category_fs_product", DBTABLE_SUFFIX, "`;"));
+
+		END LOOP;
+
+		CLOSE loop_cur1;
+
+		DROP TEMPORARY TABLE IF EXISTS `temp_clearance_subcategories_mapping`;
+	END;
+	
+	/* Disable All Categories under Clearance (not included itself) */
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "category` SET `active` = 0 WHERE `id_category` IN (SELECT DISTINCT id_category FROM `", PS_DBNAME, "category_summary` WHERE `ParentLv1` = 856);"));
+	/* Enable Clearance Subcategories which contains products */
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "category` SET `active` = 1 WHERE (`id_category` IN ( SELECT DISTINCT `summary`.`ParentLv2` FROM `", PS_DBNAME, "category_product` AS `categories` INNER JOIN `", PS_DBNAME, "product` AS `product` ON `categories`.`id_product` = `product`.`id_product` AND `product`.`active` = 1 INNER JOIN `", PS_DBNAME, "category_summary` AS `summary` ON `categories`.`id_category` = `summary`.`id_category` AND `summary`.`ParentLv1` = 856 ) OR `id_category` IN (	SELECT DISTINCT `categories`.`id_category` FROM `", PS_DBNAME, "category_product` AS `categories` INNER JOIN `", PS_DBNAME, "product` AS `product` ON `categories`.`id_product` = `product`.`id_product` AND `product`.`active` = 1 INNER JOIN `", PS_DBNAME, "category_summary` AS `summary` ON `categories`.`id_category` = `summary`.`id_category` AND `summary`.`ParentLv1` = 856 ) 
+	) AND `active` = 0 ;"));
+	
+END IF;
+
+CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `temp_fs_product", DBTABLE_SUFFIX, "`;"));
+
+SELECT 
+    CONCAT('Now to clean those DELETED items: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+
+/* Disable Products not in the DELETED */
+IF SUBSTRING(DBTABLE_SUFFIX, 2, 2) = 'targetnz' THEN
+	CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `temp_fs_product", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT `tab_prex_sf_product`.`NAME`, `tab_prex_sf_product`.`PRODUCTCODE`, `tab_prex_sf_product`.`ISACTIVE`, `tab_prex_sf_product`.`tab_prex_STATUS__C`,
+		CASE WHEN SUBSTRING(UPPER(`NAME`), 1, 3) = 'VK-' THEN CONCAT('", PRODUCT_PREFIX, "', `NAME`) ELSE `NAME` END AS `tab_prex_PRODUCTCODE`
+		FROM
+		`tab_prex_sf_product`
+	WHERE
+		UPPER(`tab_prex_STATUS__C`) IN (UPPER('DELETED')) AND `tab_prex_Database__C` = 'Flamestop7_NZ' ORDER BY NAME ASC )"));
+ELSE
+	CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `temp_fs_product", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT `tab_prex_sf_product`.`NAME`, `tab_prex_sf_product`.`PRODUCTCODE`, `tab_prex_sf_product`.`ISACTIVE`, `tab_prex_sf_product`.`tab_prex_STATUS__C`, CONCAT('", PRODUCT_PREFIX, "', `NAME`) AS `tab_prex_PRODUCTCODE`
+		FROM
+		`tab_prex_sf_product`
+	WHERE
+		UPPER(`tab_prex_STATUS__C`) IN (UPPER('DELETED')) AND `tab_prex_Database__C` = 'Flamestop7' ORDER BY NAME ASC )"));
+END IF;
+
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product` SET `active` = 0 WHERE CONCAT('", PRODUCT_PREFIX, "', `reference`) IN (SELECT DISTINCT `tab_prex_PRODUCTCODE` FROM `temp_fs_product", DBTABLE_SUFFIX, "` WHERE
+		UPPER(`tab_prex_STATUS__C`) IN (UPPER('DELETED')));"));
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product_shop` SET `active` = 0 WHERE `id_product` IN (SELECT DISTINCT `id_product` FROM `", PS_DBNAME, "product` WHERE `active` = 0) ;"));
+
+CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `temp_fs_product", DBTABLE_SUFFIX, "`;"));
+
+
+SELECT 
+    CONCAT('Now it ends: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+            
+SELECT 'The Products in Clearance Category has been recheck !!';
+
+/* Update Clearance NRgiht TRee & Resummary the Categories */
+CALL `SP_Exec_Qry`(CONCAT('SELECT MAX(nright) as MAX_NRIGHT INTO @CLEARANCE_LEVEL_NRIGHT FROM `', PS_DBNAME ,'category` WHERE `id_parent` = 856;'));
+CALL `SP_Exec_Qry`(CONCAT('UPDATE `', PS_DBNAME ,'category` SET `nright` = @CLEARANCE_LEVEL_NRIGHT + 1  WHERE `id_category` = 856;'));
+		
+CALL `SP_Exec_Qry_OtherDB`(CONCAT("CALL `flamestop", "_", SERVER_TARGET, "`.`SP_Category_Summary_Table`();"));
+
+
+SET sql_mode = 'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
+SET max_sp_recursion_depth=0;
+
+END

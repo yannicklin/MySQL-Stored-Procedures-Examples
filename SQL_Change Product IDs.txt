@@ -1,0 +1,83 @@
+CREATE DEFINER=`root`@`root` PROCEDURE `SP_Update_Product_ID`(IN SERVER_TARGET VARCHAR(50), IN ORIGIN_ID VARCHAR(50), IN TARGET_ID VARCHAR(50))
+BEGIN
+
+ DECLARE PS_DBNAME VARCHAR(50);
+ DECLARE DBTABLE_SUFFIX VARCHAR(50);
+ 
+ SET SERVER_TARGET = IFNULL(SERVER_TARGET, 'au-lego');
+ IF SERVER_TARGET = 'au-lego' THEN
+ 	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+ ELSEIF SERVER_TARGET = 'target_test' THEN
+ 	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+ ELSEIF SERVER_TARGET = 'target' THEN
+ 	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+ ELSEIF SERVER_TARGET = 'nz-lego' THEN
+ 	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+ ELSEIF SERVER_TARGET = 'targetnz_test' THEN
+ 	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+ ELSEIF SERVER_TARGET = 'targetnz' THEN
+ 	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+ ELSE
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = '_au-lego';
+ END IF;
+ 
+CALL `SP_Exec_Qry`(CONCAT("SELECT @PRODUCTS_USED := COUNT(*) FROM `", PS_DBNAME, "order_detail` WHERE `product_id` IN (", ORIGIN_ID , ", ", TARGET_ID ,") "));
+
+IF (@PRODUCTS_USED = 0) THEN
+	/* Update Product Tables */
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product_attachment` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product_attribute` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));	
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product_attribute_shop` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));	
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product_carrier` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));	
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product_country_tax` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));	
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product_download` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));	
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product_group_reduction_cache` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));	
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product_lang` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));	
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product_sale` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));	
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product_shop` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));	
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product_supplier` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));	
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product_tag` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));	
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "product` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	
+	/* Update Other Tables (Prestashop Core) */
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "accessory` SET `id_product_1` = ", TARGET_ID ," WHERE `id_product_1` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "accessory` SET `id_product_2` = ", TARGET_ID ," WHERE `id_product_2` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "attribute_impact` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "category_product` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "feature_product` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "image` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "image_shop` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "layered_price_index` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "layered_product_attribute` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "specific_price` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "specific_price_priority` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "stock` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "stock_available` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "warehouse_product_location` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+
+	/* Update Other Tables (Optional Modules and customized) */
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "sendtoafriend_extra` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "fmm_stickers_products` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `", PS_DBNAME, "fmm_stickersbanners_products` SET `id_product` = ", TARGET_ID ," WHERE `id_product` = ", ORIGIN_ID ," "));
+
+	/* Clean Cart and Compare Records */
+	CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `", PS_DBNAME, "compare_product` WHERE `id_product` IN (", ORIGIN_ID , ", ", TARGET_ID ,") "));
+	CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `", PS_DBNAME, "cart_product` WHERE `id_product` IN (", ORIGIN_ID , ", ", TARGET_ID ,") "));
+
+ELSE
+	SELECT 'Operation Cancelled for the products have been used in orders.';
+END IF;
+ 
+SELECT 
+    CONCAT('Now it ends: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !'); 
+END

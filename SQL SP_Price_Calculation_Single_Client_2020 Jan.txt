@@ -1,0 +1,142 @@
+BEGIN
+ DECLARE PS_DBNAME VARCHAR(50);
+ DECLARE DBTABLE_SUFFIX VARCHAR(50);
+ DECLARE PRODUCT_PREFIX VARCHAR(50);
+ 
+ SET sql_mode = 'ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
+ 
+ SET SERVER_TARGET = IFNULL(SERVER_TARGET, 'au-lego');
+ IF SERVER_TARGET = 'au-lego' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+ ELSEIF SERVER_TARGET = 'target_test' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+ ELSEIF SERVER_TARGET = 'target' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+ ELSEIF SERVER_TARGET = 'nz-lego' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+ ELSEIF SERVER_TARGET = 'targetnz_test' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+ ELSEIF SERVER_TARGET = 'targetnz' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+ ELSE
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = '_au-lego';
+	SET PRODUCT_PREFIX = '';
+ END IF;
+ 
+SELECT 'This procedure is to create the matrix of product and the target account/company, with the price based on the Price Tier and Debtor Price Rule.';
+SELECT 'All data are come from SalesForce without modifications.';
+SELECT 
+    CONCAT('Now it starts: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+/* RECREATE Company/ACCOUNT TABLE */
+CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `tab_prex_company", DBTABLE_SUFFIX, "`"));
+
+IF SUBSTRING(DBTABLE_SUFFIX, 2, 2) = 'target' THEN
+	CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `tab_prex_company", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT
+		`ID` AS `ACCOUNT_ID`,
+		`NAME` AS `ACCOUNT`,
+		`tab_prex_SELLING_PRICE_SCHEME__C` FROM
+		`tab_prex_sf_account` WHERE`tab_prex_ACTIVE__C` = 1 AND `RECORDTYPEID` = 'xxxsample001xxx' AND `ID` = '", CLIENT_TARGET, "' ) "));
+ELSEIF SUBSTRING(DBTABLE_SUFFIX, 2, 2) = 'targetnz' THEN
+	CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `tab_prex_company", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT
+		`ID` AS `ACCOUNT_ID`,
+		`NAME` AS `ACCOUNT`,
+		`tab_prex_SELLING_PRICE_SCHEME__C` FROM
+		`tab_prex_sf_account` WHERE `tab_prex_ACTIVE__C` = 1 AND `RECORDTYPEID` = 'xxxsample002xxx' AND `ID` = '", CLIENT_TARGET, "' ) "));
+ELSE
+	CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `tab_prex_company", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT
+		`ID` AS `ACCOUNT_ID`,
+		`NAME` AS `ACCOUNT`,
+		`tab_prex_SELLING_PRICE_SCHEME__C` FROM
+		`tab_prex_sf_account` WHERE `tab_prex_ACTIVE__C` = 1 AND `RECORDTYPEID` NOT IN ('xxxsample001xxx', 'xxxsample002xxx') AND `ID` = '", CLIENT_TARGET, "' ) "));
+END IF;
+
+SELECT 
+    CONCAT('Account/Company Information Prepared: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');				
+
+/* Prepare the Debtor Specific Rule Table */
+CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `tab_prex_debtor_specific_price_temp", DBTABLE_SUFFIX, "`"));
+CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `tab_prex_debtor_specific_price_temp", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS ( SELECT c.`tab_prex_ACCOUNT__C`, c.`tab_prex_PRODUCT__C`, c.`tab_prex_AMOUNT__C`, c.`tab_prex_NEW_PRICE__C`, c.`tab_prex_QUANTITY_BREAK__C`, c.`tab_prex_MODE__C` FROM `tab_prex_sf_debtor_specific_price` AS c WHERE c.`tab_prex_ACCOUNT__C` = '", CLIENT_TARGET,"' AND c.`NAME` IN ( SELECT MAX(b.`NAME`) AS `Rules_Selected` FROM `tab_prex_sf_debtor_specific_price` AS b INNER JOIN ( SELECT `tab_prex_ACCOUNT__C`, `tab_prex_PRODUCT__C`, `tab_prex_QUANTITY_BREAK__C`, MAX(STR_TO_DATE(`tab_prex_START_DATE__C`, '%Y-%m-%d')) AS `Most_Current_Date` FROM `tab_prex_sf_debtor_specific_price` WHERE `tab_prex_ACCOUNT__C` = '", CLIENT_TARGET,"' AND STR_TO_DATE(`tab_prex_START_DATE__C`, '%Y-%m-%d') <= CURDATE() AND STR_TO_DATE(`tab_prex_END_DATE__C`, '%Y-%m-%d') >= CURDATE() GROUP BY `tab_prex_ACCOUNT__C`, `tab_prex_PRODUCT__C`, `tab_prex_QUANTITY_BREAK__C`) AS a ON b.`tab_prex_ACCOUNT__C` = a.`tab_prex_ACCOUNT__C` AND b.`tab_prex_ACCOUNT__C` = '", CLIENT_TARGET,"' AND b.`tab_prex_PRODUCT__C` = a.`tab_prex_PRODUCT__C` AND b.`tab_prex_QUANTITY_BREAK__C` = a.`tab_prex_QUANTITY_BREAK__C` AND STR_TO_DATE(b.`tab_prex_START_DATE__C`, '%Y-%m-%d') = a.`Most_Current_Date` GROUP BY b.`tab_prex_ACCOUNT__C`, b.`tab_prex_PRODUCT__C`, b.`tab_prex_QUANTITY_BREAK__C`));"));
+CALL `SP_Exec_Qry`(CONCAT("CREATE INDEX `index_fs_debtor_specific_price", DBTABLE_SUFFIX, "` ON `tab_prex_debtor_specific_price_temp", DBTABLE_SUFFIX, "` (`tab_prex_ACCOUNT__C`, `tab_prex_PRODUCT__C`);"));
+
+SELECT 
+    CONCAT('Debtor Specific Rules Information Prepared: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');				
+			
+/* Partial Batch Processing based on the segment on Client Table */
+CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `tab_prex_product_company", DBTABLE_SUFFIX, "`"));
+/* Clean the temp table: the mix of product with client (contact with active account) */
+CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `tab_prex_product_company", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT a.*, b.*, CAST(a.`tab_prex_RRP_PRICE__C` AS DECIMAL(8,2)) AS `tab_prex_PRICE_CALC`, CAST(a.`tab_prex_RRP_PRICE__C` AS DECIMAL(8,2)) AS `tab_prex_PRICE_CALC_DEBTOR` FROM `tab_prex_product", DBTABLE_SUFFIX, "` AS a JOIN (SELECT * FROM `tab_prex_company", DBTABLE_SUFFIX, "`) AS b);"));
+
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_product_company", DBTABLE_SUFFIX, "` 
+SET `tab_prex_PRICE_CALC` = CASE UPPER(`tab_prex_SELLING_PRICE_SCHEME__C`) WHEN UPPER('T1 Price') THEN `FINAL_TIER_1_PRICE` WHEN UPPER('T2 Price') THEN `FINAL_TIER_2_PRICE` WHEN UPPER('T3 Price') THEN `FINAL_TIER_3_PRICE` WHEN UPPER('T4 Price') THEN `FINAL_TIER_4_PRICE` WHEN UPPER('T5 Price') THEN `FINAL_TIER_5_PRICE` WHEN UPPER('T6 Price') THEN `FINAL_TIER_6_PRICE` WHEN UPPER('T7 Price') THEN `FINAL_TIER_7_PRICE` WHEN UPPER('T8 Price') THEN `FINAL_TIER_8_PRICE` WHEN UPPER('T9 Price') THEN `FINAL_TIER_9_PRICE` WHEN UPPER('T10 Price') THEN `FINAL_TIER_10_PRICE` ELSE `FINAL_TIER_1_PRICE` END;"));
+
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_product_company", DBTABLE_SUFFIX, "` 
+SET 
+    `tab_prex_PRICE_CALC_DEBTOR` = `tab_prex_PRICE_CALC`
+WHERE
+    `tab_prex_PRICE_CALC_DEBTOR` != `tab_prex_PRICE_CALC`;"));
+	
+/* APPLY DEBTOR SPECIFIC PRICES */
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_product_company", DBTABLE_SUFFIX, "` AS `tab_prex_product_company`
+        INNER JOIN `tab_prex_debtor_specific_price_temp", DBTABLE_SUFFIX, "` AS `partial_rules` ON `partial_rules`.`tab_prex_ACCOUNT__C` = `tab_prex_product_company`.`ACCOUNT_ID`
+        AND `partial_rules`.`tab_prex_PRODUCT__C` = `tab_prex_product_company`.`ID` AND `partial_rules`.`tab_prex_Quantity_Break__C` = 0 AND `partial_rules`.`tab_prex_NEW_PRICE__C` != 0 AND `tab_prex_product_company`.`tab_prex_SELLING_PRICE_SCHEME__C` NOT IN ('T10 Price')
+SET 
+    `tab_prex_product_company`.`tab_prex_PRICE_CALC_DEBTOR` = `partial_rules`.`tab_prex_NEW_PRICE__C` ;"));
+	
+/* == ! Doing Nothing about those FS_MODE__C = 'Actual' ! == */
+
+
+/* == Set price to ZERO while they are negative == */ 
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_product_company", DBTABLE_SUFFIX, "` 
+SET 
+    `tab_prex_PRICE_CALC_DEBTOR` = 0
+WHERE
+    `tab_prex_PRICE_CALC_DEBTOR` < 0;"));
+	
+/* Append to the final table */
+CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `tab_prex_product_company_price_temp", DBTABLE_SUFFIX, "` ENGINE=MEMORY AS (SELECT `ACCOUNT_ID`, `ACCOUNT`, `tab_prex_PRODUCTCODE` AS `reference`, `tab_prex_PRICE_CALC_DEBTOR` AS `price`, CURRENT_TIMESTAMP AS `date_upd` FROM `tab_prex_product_company", DBTABLE_SUFFIX, "`);"));
+
+CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `tab_prex_product_company", DBTABLE_SUFFIX, "`"));
+	
+/* Override the Price based on the Flamestop Manual-Set Price_Overwrite Table */
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_product_company_price_temp", DBTABLE_SUFFIX, "` AS `tab_prex_product_company_price` INNER JOIN `tab_prex_product_price_overwrite", DBTABLE_SUFFIX, "` AS `tab_prex_product_price_overwrite` On `tab_prex_product_company_price`.`reference` = CONCAT('", PRODUCT_PREFIX, "', `tab_prex_product_price_overwrite`.`reference`)  AND DATE(`tab_prex_product_price_overwrite`.`date_start`) <= CURDATE() AND (DATE(`tab_prex_product_price_overwrite`.`date_end`) >= CURDATE() OR `tab_prex_product_price_overwrite`.`date_end` = '' OR `tab_prex_product_price_overwrite`.`date_end` IS NULL) SET `tab_prex_product_company_price`.`price` = `tab_prex_product_price_overwrite`.`price`; "));
+
+CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `tab_prex_company", DBTABLE_SUFFIX, "`"));
+
+/* Clone Result to PrestaShop Website Database */
+CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `tab_prex_debtor_specific_price_temp", DBTABLE_SUFFIX, "`"));
+CALL `SP_Exec_Qry`(CONCAT("DROP TABLE IF EXISTS `", PS_DBNAME, "product_company_price", TMP_TABLE_SUFFIX , "`"));
+SET autocommit=0;
+CALL `SP_Exec_Qry`(CONCAT("CREATE TABLE `", PS_DBNAME, "product_company_price", TMP_TABLE_SUFFIX , "` AS SELECT * FROM `tab_prex_product_company_price_temp", DBTABLE_SUFFIX, "`"));
+COMMIT;
+CALL `SP_Exec_Qry`(CONCAT("DROP TEMPORARY TABLE IF EXISTS `tab_prex_product_company_price_temp", DBTABLE_SUFFIX, "`"));
+
+SELECT 
+    CONCAT('Now it ends: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+            
+SELECT 'The Price Matrix has been re-composed !';
+
+SET sql_mode = 'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
+
+END

@@ -1,0 +1,73 @@
+CREATE DEFINER=`root`@`root` PROCEDURE `SP_Clean_Price_List_TEMPs`(IN SERVER_TARGET VARCHAR(50), OUT RUNNING_RESULT VARCHAR(50))
+BEGIN
+ DECLARE PS_DBNAME VARCHAR(50);
+ DECLARE batch INT;
+ DECLARE DBTABLE_SUFFIX VARCHAR(50);
+ DECLARE PRODUCT_PREFIX VARCHAR(50);
+ DECLARE JIWA_DBTABLE_SUFFIX VARCHAR(50);
+ 
+ SET batch = 86400;
+ 
+ IF SERVER_TARGET = 'au-lego' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+	SET JIWA_DBTABLE_SUFFIX = '';
+ ELSEIF SERVER_TARGET = 'target_test' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+	SET JIWA_DBTABLE_SUFFIX = '';
+ ELSEIF SERVER_TARGET = 'target' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+	SET JIWA_DBTABLE_SUFFIX = '';
+ ELSEIF SERVER_TARGET = 'nz-lego' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+	SET JIWA_DBTABLE_SUFFIX = '_NZ';
+ ELSEIF SERVER_TARGET = 'targetnz_test' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+	SET JIWA_DBTABLE_SUFFIX = '_NZ';
+ ELSEIF SERVER_TARGET = 'targetnz' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+	SET JIWA_DBTABLE_SUFFIX = '_NZ';
+ ELSE
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = '_au-lego';
+	SET PRODUCT_PREFIX = '';
+	SET JIWA_DBTABLE_SUFFIX = '';
+ END IF;
+ 
+SELECT 'This procedure is to clean the temporary pricelist tables.';
+SELECT 
+    CONCAT('Now it starts: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+SET @counter = 1;
+SET @unixTIMESTEMP_Suffix = UNIX_TIMESTAMP(DATE_SUB( NOW(), INTERVAL 36 HOUR ));
+
+REPEAT
+
+	CALL `SP_Exec_Qry`(CONCAT("DROP TABLE IF EXISTS `", PS_DBNAME, "product_company_price_auto_pdf_temp", @unixTIMESTEMP_Suffix, "` ;"));
+	CALL `SP_Exec_Qry`(CONCAT("DROP TABLE IF EXISTS `", PS_DBNAME, "product_company_price_manu_pdf_temp", @unixTIMESTEMP_Suffix, "` ;"));
+
+	SET @counter = @counter + 1;
+	SET @unixTIMESTEMP_Suffix = @unixTIMESTEMP_Suffix + 1;
+
+UNTIL (@counter >= batch) END REPEAT;
+
+SELECT 
+    CONCAT('Now it ends: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+            
+SELECT 'The PriceList Temporay Tables Cleaning Processing has been re-composed !';
+END

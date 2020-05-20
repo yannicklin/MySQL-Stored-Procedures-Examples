@@ -1,0 +1,29 @@
+
+/* Check Product not existed in SalesForce */
+select category.name as 'Category', lang.name as 'Product', product.reference from sampledb.kuom_product as product inner join sampledb.kuom_product_lang as lang on product.id_product = lang.id_product inner join sampledb.kuom_category_lang as category on product.id_category_default = category.id_category where product.reference not in (select distinct reference from data_mapping.fs_product_company_price) and product.id_product not in (select distinct id_product from sampledb.kuom_product_attribute) and product.active = 1 and lang.id_lang = 1 and category.id_lang = 1;
+
+/* Check Product with near zero Price */
+select category.name as 'Category', lang.name as 'Product', product.reference from sampledb.kuom_product as product inner join sampledb.kuom_product_lang as lang on product.id_product = lang.id_product inner join sampledb.kuom_category_lang as category on product.id_category_default = category.id_category where product.reference in (select distinct reference from data_mapping.fs_product_company_price where price <= 0.005) and product.id_product not in (select distinct id_product from sampledb.kuom_product_attribute) and product.active = 1 and lang.id_lang = 1 and category.id_lang = 1;
+
+
+/* Check Product Attributes not existed in SalesForce */
+select category.name as 'Category', lang.name as 'Product', productattribute.reference, attributegrouplang.name as 'Attribute', attributelang.name as 'Value'
+from sampledb.kuom_product as product inner join sampledb.kuom_product_attribute as productattribute on product.id_product = productattribute.id_product 
+inner join sampledb.kuom_product_lang as lang on product.id_product = lang.id_product 
+inner join sampledb.kuom_category_lang as category on product.id_category_default = category.id_category 
+inner join sampledb.kuom_product_attribute_combination as combination on productattribute.id_product_attribute = combination.id_product_attribute 
+inner join sampledb.kuom_attribute as attribute on combination.id_attribute = attribute.id_attribute 
+inner join sampledb.kuom_attribute_lang as attributelang on attribute.id_attribute = attributelang.id_attribute and attributelang.id_lang = 1 
+inner join sampledb.kuom_attribute_group_lang as attributegrouplang on attribute.id_attribute_group = attributegrouplang.id_attribute_group and attributegrouplang.id_lang = 1
+where productattribute.reference not in (select distinct reference from data_mapping.fs_product_company_price) and product.active = 1 and lang.id_lang = 1 and category.id_lang = 1;
+
+/* Check Product Attributes with near zero Price */
+select category.name as 'Category', lang.name as 'Product', productattribute.reference, attributegrouplang.name as 'Attribute', attributelang.name as 'Value'
+from sampledb.kuom_product as product inner join sampledb.kuom_product_attribute as productattribute on product.id_product = productattribute.id_product 
+inner join sampledb.kuom_product_lang as lang on product.id_product = lang.id_product 
+inner join sampledb.kuom_category_lang as category on product.id_category_default = category.id_category 
+inner join sampledb.kuom_product_attribute_combination as combination on productattribute.id_product_attribute = combination.id_product_attribute 
+inner join sampledb.kuom_attribute as attribute on combination.id_attribute = attribute.id_attribute 
+inner join sampledb.kuom_attribute_lang as attributelang on attribute.id_attribute = attributelang.id_attribute and attributelang.id_lang = 1 
+inner join sampledb.kuom_attribute_group_lang as attributegrouplang on attribute.id_attribute_group = attributegrouplang.id_attribute_group and attributegrouplang.id_lang = 1
+where productattribute.reference in (select distinct reference from data_mapping.fs_product_company_price where price <= 0.005) and product.active = 1 and lang.id_lang = 1 and category.id_lang = 1;

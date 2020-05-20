@@ -1,0 +1,40 @@
+CREATE DEFINER=`root`@`root` PROCEDURE `SP_Customer_New_Records_RAND`()
+
+BEGIN
+ DECLARE COOKIE_KEY VARCHAR(50);
+ DECLARE RAND_MAX int;
+ DECLARE batch_size  INT;
+
+ /* PASSWORD: md5(_COOKIE_KEY_.rand()); */
+ /* PASSWORD SQL: MD5(CONCAT(COOKIE_KEY, FLOOR(RAND()*RAND_MAX))); */
+ 
+ SET COOKIE_KEY = 'COOKIESCOOKIES'; /* Same setting in PrestaShop */
+ SET RAND_MAX = 1111111111; /* 32-bit OS PHP */
+ SET batch_size = 500;
+ 
+SELECT 'This procedure is to create the Customer records based on the Contact & Account tables of SalesForce.';
+SELECT 
+    CONCAT('Now it starts: ',
+		DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+		' !');
+
+DROP TABLE IF EXISTS `tab_prex_sf_customer_new`;
+
+CREATE TABLE `tab_prex_sf_customer_new` AS (
+SELECT `tab_prex_sf_contact`.`LASTNAME`, `tab_prex_sf_contact`.`FIRSTNAME`, `tab_prex_sf_contact`.`SALUTATION`, `tab_prex_sf_contact`.`NAME` AS `CONTACT`, `tab_prex_sf_contact`.`EMAIL`, `tab_prex_sf_account`.`NAME` AS `ACCOUNT`, `tab_prex_sf_account`.`tab_prex_BRANCH__C`, `tab_prex_sf_account`.`tab_prex_COMPANY_NAME__C` FROM (SELECT * FROM `tab_prex_sf_contact` WHERE UPPER(`ISDELETED`) = UPPER('FALSE') AND UPPER(`tab_prex_ACTIVE__C`) = UPPER('TRUE') AND `EMAIL` NOT IN (SELECT DISTINCT `email` FROM `kuom_customer`) ORDER BY RAND() LIMIT batch_size) AS `tab_prex_sf_contact` INNER JOIN `tab_prex_sf_account` ON `tab_prex_sf_contact`.`ACCOUNTID` = `tab_prex_sf_account`.`ID` WHERE UPPER(`tab_prex_sf_account`.`ISDELETED`) = UPPER('FALSE') AND UPPER(`tab_prex_sf_account`.`tab_prex_ACTIVE__C`) = UPPER('TRUE') );
+
+
+INSERT INTO `kuom_customer` (`id_gender`, `firstname`, `lastname`, `email`, `passwd`, `company`, `date_add`, `date_upd`) SELECT 1, `FIRSTNAME`, `LASTNAME`, `EMAIL`, MD5(CONCAT(COOKIE_KEY, FLOOR(RAND()*RAND_MAX))), `tab_prex_COMPANY_NAME__C`, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP FROM `tab_prex_sf_customer_new` WHERE `SALUTATION` = 'Mr.';
+
+INSERT INTO `kuom_customer` (`id_gender`, `firstname`, `lastname`, `email`, `passwd`, `company`, `date_add`, `date_upd`) SELECT 2, `FIRSTNAME`, `LASTNAME`, `EMAIL`, MD5(CONCAT(COOKIE_KEY, FLOOR(RAND()*RAND_MAX))), `tab_prex_COMPANY_NAME__C`, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP FROM `tab_prex_sf_customer_new` WHERE `SALUTATION` = 'Mrs.';
+
+INSERT INTO `kuom_customer` (`id_gender`, `firstname`, `lastname`, `email`, `passwd`, `company`, `date_add`, `date_upd`) SELECT 3, `FIRSTNAME`, `LASTNAME`, `EMAIL`, MD5(CONCAT(COOKIE_KEY, FLOOR(RAND()*RAND_MAX))), `tab_prex_COMPANY_NAME__C`, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP FROM `tab_prex_sf_customer_new` WHERE `SALUTATION` = 'Ms.';
+
+INSERT INTO `kuom_customer` (`id_gender`, `firstname`, `lastname`, `email`, `passwd`, `company`, `date_add`, `date_upd`) SELECT 0, `FIRSTNAME`, `LASTNAME`, `EMAIL`, MD5(CONCAT(COOKIE_KEY, FLOOR(RAND()*RAND_MAX))), `tab_prex_COMPANY_NAME__C`, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP FROM `tab_prex_sf_customer_new` WHERE `SALUTATION` NOT IN ('Mr.', 'Mrs.', 'Ms.');
+
+
+SELECT 
+    CONCAT('Now it ends: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+END

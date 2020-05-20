@@ -1,0 +1,40 @@
+CREATE TABLE `tab_prex_contact_customer_mapping_target` LIKE `tab_prex_contact_customer_mapping_target_test`;
+ 
+INSERT `tab_prex_contact_customer_mapping_target`
+SELECT * FROM `tab_prex_contact_customer_mapping_target_test`;
+
+
+CREATE TABLE `tab_prex_contact_import_issues_target` LIKE `tab_prex_contact_import_issues_target_test`;
+ 
+INSERT `tab_prex_contact_import_issues_target`
+SELECT * FROM `tab_prex_contact_import_issues_target_test`;
+
+
+CREATE TABLE `tab_prex_customer_activities_target` LIKE `tab_prex_customer_activities_target_test`;
+ 
+INSERT `tab_prex_customer_activities_target`
+SELECT * FROM `tab_prex_customer_activities_target_test`;
+
+
+CREATE TABLE `tab_prex_debtor_specific_price_target` LIKE `tab_prex_debtor_specific_price_target_test`;
+ 
+INSERT `tab_prex_debtor_specific_price_target`
+SELECT * FROM `tab_prex_debtor_specific_price_target_test`;
+
+
+CREATE TABLE `tab_prex_product_target` LIKE `tab_prex_product_target_test`;
+ 
+INSERT `tab_prex_product_target`
+SELECT * FROM `tab_prex_product_target_test`;
+
+
+CREATE TABLE `tab_prex_product_company_price_target` LIKE `tab_prex_product_company_price_target_test`;
+ 
+INSERT `tab_prex_product_company_price_target`
+SELECT * FROM `tab_prex_product_company_price_target_test`;
+
+
+CREATE TABLE `tab_prex_product_price_overwrite_target` LIKE `tab_prex_product_price_overwrite_target_test`;
+ 
+INSERT `tab_prex_product_price_overwrite_target`
+SELECT * FROM `tab_prex_product_price_overwrite_target_test`;

@@ -1,0 +1,15 @@
+select category.name as 'category', product.id_product, lang.name, null as 'id_attribute', null as 'attribute_field', null as 'attribute', product.reference from kuom_product as product inner join kuom_product_lang as lang on product.id_product = lang.id_product inner join kuom_category_lang as category on product.id_category_default = category.id_category where product.id_product not in (select distinct id_product from kuom_product_attribute) and product.active = 1 and lang.id_lang = 1 and category.id_lang = 1
+
+union
+
+select category.name as 'category', productattribute.id_product, lang.name, productattribute.id_product_attribute, attributegrouplang.name, attributelang.name, productattribute.reference 
+from kuom_product as product inner join origindb.kuom_product_attribute as productattribute on product.id_product = productattribute.id_product 
+inner join kuom_product_lang as lang on product.id_product = lang.id_product 
+inner join kuom_category_lang as category on product.id_category_default = category.id_category 
+inner join kuom_product_attribute_combination as combination on productattribute.id_product_attribute = combination.id_product_attribute 
+inner join kuom_attribute as attribute on combination.id_attribute = attribute.id_attribute 
+inner join kuom_attribute_lang as attributelang on attribute.id_attribute = attributelang.id_attribute and attributelang.id_lang = 1 
+inner join kuom_attribute_group_lang as attributegrouplang on attribute.id_attribute_group = attributegrouplang.id_attribute_group and attributegrouplang.id_lang = 1
+where product.active = 1 and lang.id_lang = 1 and category.id_lang = 1
+
+order by category, id_product, id_attribute, reference

@@ -1,0 +1,127 @@
+DROP EVENT IF EXISTS `Event_Category_Summary`;
+
+delimiter |
+
+CREATE DEFINER=`root`@`root` EVENT IF NOT EXISTS `Event_Category_Summary_Table`
+    ON SCHEDULE
+      EVERY 5 MINUTE
+    COMMENT 'Update the Category_Summary Periodically'
+    DO
+      BEGIN
+        DECLARE ROOT_LEVELS int;
+		DECLARE MAX_LEVELS int;
+		DECLARE SQL_STATEMENT VARCHAR(4000);
+		DECLARE DBNAME VARCHAR(50);
+		DECLARE TABLE_PREFIX VARCHAR(50);
+		SET DBNAME = DATABASE();
+		SET TABLE_PREFIX = 'dbprex_';
+
+		CALL `data_mapping`.`SP_Exec_Qry`(CONCAT('DROP TABLE IF EXISTS `', DBNAME ,'`.`temp_category`;'));
+		CALL `data_mapping`.`SP_Exec_Qry`(CONCAT('CREATE TABLE `', DBNAME ,'`.`temp_category` ENGINE=MEMORY SELECT kuom_category.*, kuom_category_lang.name FROM
+			`', DBNAME , '`.`' , TABLE_PREFIX ,'category` AS `kuom_category`
+				INNER JOIN
+			`', DBNAME , '`.`' , TABLE_PREFIX ,'category_lang` AS `kuom_category_lang` ON kuom_category.id_category = kuom_category_lang.id_category
+				WHERE kuom_category.active = 1 AND kuom_category_lang.id_lang = 1
+				AND kuom_category_lang.id_shop = 1;'));
+
+		SELECT 
+			MAX(level_depth)
+		INTO ROOT_LEVELS FROM
+			`temp_category`
+		WHERE
+			is_root_category = 1;
+		SELECT 
+			MAX(level_depth)
+		INTO MAX_LEVELS FROM
+			`temp_category`;
+
+		CALL `data_mapping`.`SP_Exec_Qry`(CONCAT('DROP TABLE IF EXISTS `', DBNAME ,'`.`temp_source`;'));
+		CALL `data_mapping`.`SP_Exec_Qry`(CONCAT('CREATE TABLE `', DBNAME ,'`.`temp_source` ENGINE=MEMORY 
+		SELECT a.`id_category` AS `id_Child`, a.`nleft`, a.`nright`, a.`level_depth`, a.`name` AS `name_Child`, b.`id_category` AS `id_Parent`, b.`name` AS `name_Parent`, a.`position`
+				FROM `', DBNAME ,'`.`temp_category` AS a
+				INNER JOIN `', DBNAME ,'`.`temp_category` AS b
+				WHERE a.`nleft` > b.`nleft`
+					AND a.`nright` < b.`nright`
+					AND a.`level_depth` = b.`level_depth` + 1 
+					AND a.`id_shop_default` = b.`id_shop_default`
+					AND a.`level_depth` > ', ROOT_LEVELS ,'
+					ORDER BY a.`level_depth` ASC, a.`id_category` ASC;'));
+
+		CALL `data_mapping`.`SP_Exec_Qry`(CONCAT('DROP TABLE IF EXISTS `', DBNAME ,'`.`temp_category`;'));
+
+
+		/* Start to Calculate the Category Summary */
+		SET @counter = ROOT_LEVELS;
+		SET @INNER_STATEMENT = '';
+		SET @OUTER_TOP_NAME_STATEMENT = '';
+		SET @OUTER_TOP_ID_STATEMENT = '';
+		SET @MAX_LV_POSITION_STATEMENT = '';
+
+		REPEAT
+
+		IF @counter = ROOT_LEVELS THEN
+			SET @INNER_STATEMENT = CONCAT('SELECT 
+				a.*,
+					b.`id_Child` AS `SubLevel', (@counter) ,'`,
+					b.`name_Child` AS `SubLevel', (@counter) ,'_Name`,
+					b.`id_Parent` AS `SubLevel', (@counter) ,'_Parent`,
+					CASE WHEN b.`id_Parent` IS NULL THEN ((a.`position` + 1) * POW(10, 2)) ELSE ((a.`position` + 1) + (b.`position` + 1) * POW(10, 2)) END AS `SubLevel', (@counter) ,'_re-position`
+			FROM
+				`', DBNAME ,'`.`temp_source` AS a
+			LEFT JOIN `', DBNAME ,'`.`temp_source` AS b ON a.`id_Parent` = b.`id_Child`');
+			
+			SET @counter_inner = @counter + 1;
+			SET @OUTER_TOP_CASE_NAME_STATEMENT = 'CASE';
+			SET @OUTER_TOP_CASE_ID_STATEMENT = ', CASE';
+			
+			WHILE ((@counter_inner + ROOT_LEVELS) <= MAX_LEVELS) DO
+				SET @OUTER_TOP_CASE_NAME_STATEMENT = CONCAT(@OUTER_TOP_CASE_NAME_STATEMENT, ' WHEN a.`level_depth` = ', (ROOT_LEVELS + @counter_inner), ' THEN a.`SubLevel', (@counter_inner - @counter) ,'_NAME`');
+				SET @OUTER_TOP_CASE_ID_STATEMENT = CONCAT(@OUTER_TOP_CASE_ID_STATEMENT, ' WHEN a.`level_depth` = ', (ROOT_LEVELS + @counter_inner), ' THEN a.`SubLevel', (@counter_inner - @counter) ,'`');
+				SET @counter_inner = @counter_inner + 1;    
+			END WHILE;
+			
+			SET @MAX_LV_POSITION_STATEMENT = CONCAT('GREATEST(COALESCE(a.`SubLevel', (@counter) ,'_re-position`, 0)');
+			
+		ELSE
+			SET @INNER_STATEMENT = CONCAT('SELECT 
+				a.*,
+					b.`id_Child` AS `SubLevel', (@counter) ,'`,
+					b.`name_Child` AS `SubLevel', (@counter) ,'_Name`,
+					b.`id_Parent` AS `SubLevel', (@counter) ,'_Parent`,
+					CASE WHEN b.`id_Parent` IS NULL THEN ((a.`SubLevel', (@counter - 1) ,'_re-position`) * POW(10, 2)) ELSE ((a.`SubLevel', (@counter - 1) ,'_re-position`) + (b.`position` + 1) * POW(10, ', (@counter) * 2 ,')) END AS `SubLevel', (@counter) ,'_re-position`
+			FROM
+				(', @INNER_STATEMENT ,') AS a
+			LEFT JOIN `', DBNAME ,'`.`temp_source` AS b ON a.`SubLevel', (@counter - 1) ,'_Parent` = b.`id_Child`');
+			
+			SET @counter_inner = @counter + 1;
+			SET @OUTER_TOP_CASE_NAME_STATEMENT = ', CASE';
+			SET @OUTER_TOP_CASE_ID_STATEMENT = ', CASE';
+			
+			WHILE ((@counter_inner + ROOT_LEVELS) <= MAX_LEVELS) DO
+				SET @OUTER_TOP_CASE_NAME_STATEMENT = CONCAT(@OUTER_TOP_CASE_NAME_STATEMENT, ' WHEN a.`level_depth` = ', (ROOT_LEVELS + @counter_inner), ' THEN a.`SubLevel', (@counter_inner - @counter) ,'_NAME`');
+				SET @OUTER_TOP_CASE_ID_STATEMENT = CONCAT(@OUTER_TOP_CASE_ID_STATEMENT, ' WHEN a.`level_depth` = ', (ROOT_LEVELS + @counter_inner), ' THEN a.`SubLevel', (@counter_inner - @counter) ,'`');
+				SET @counter_inner = @counter_inner + 1;    
+			END WHILE;
+			
+			SET @MAX_LV_POSITION_STATEMENT = CONCAT(@MAX_LV_POSITION_STATEMENT, ', COALESCE(a.`SubLevel', (@counter) ,'_re-position`, 0)');
+			
+		END IF;
+
+		IF (@OUTER_TOP_CASE_NAME_STATEMENT <> ', CASE')
+		THEN 
+			SET @OUTER_TOP_NAME_STATEMENT = CONCAT(@OUTER_TOP_NAME_STATEMENT, @OUTER_TOP_CASE_NAME_STATEMENT ,' ELSE NULL END AS `ParentLv', @counter ,'_Name`');
+			SET @OUTER_TOP_ID_STATEMENT = CONCAT(@OUTER_TOP_ID_STATEMENT, @OUTER_TOP_CASE_ID_STATEMENT ,' ELSE NULL END AS `ParentLv', @counter ,'`');
+		END IF;
+
+		SET @counter = @counter + 1;
+
+		UNTIL ((ROOT_LEVELS + @counter) >= MAX_LEVELS) END REPEAT;
+
+		SET @MAX_LV_POSITION_STATEMENT = CONCAT(@MAX_LV_POSITION_STATEMENT, ') AS `position_over_summary`, ');
+
+		CALL `data_mapping`.`SP_Exec_Qry`(CONCAT('DROP TABLE IF EXISTS `', DBNAME , '`.`' , TABLE_PREFIX , 'category_summary`;'));
+		CALL `data_mapping`.`SP_Exec_Qry`(CONCAT('CREATE TABLE `', DBNAME , '`.`' , TABLE_PREFIX , 'category_summary` SELECT a.`id_Child` as `id_category`, a.`nleft`, a.`nright`, a.`level_depth`, a.`name_Child` as `category_name`, ', @MAX_LV_POSITION_STATEMENT , @OUTER_TOP_NAME_STATEMENT, @OUTER_TOP_ID_STATEMENT ,' FROM (', @INNER_STATEMENT, ') AS a ORDER BY `position_over_summary` ASC;'));
+		CALL `data_mapping`.`SP_Exec_Qry`(CONCAT('DROP TABLE IF EXISTS `', DBNAME ,'`.`temp_source`;'));
+      END |
+
+delimiter ;

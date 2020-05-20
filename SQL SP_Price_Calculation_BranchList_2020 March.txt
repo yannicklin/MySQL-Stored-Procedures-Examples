@@ -1,0 +1,210 @@
+BEGIN
+ DECLARE PS_DBNAME VARCHAR(50);
+ DECLARE DBTABLE_SUFFIX VARCHAR(50);
+ DECLARE PRODUCT_PREFIX VARCHAR(50);
+ 
+ SET sql_mode = 'ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
+ 
+ SET SERVER_TARGET = IFNULL(SERVER_TARGET, 'au-lego');
+IF ((SUBSTRING(SERVER_TARGET, 3, 1) = '-')  AND (SUBSTRING(SERVER_TARGET, 1, 2) = 'target')) THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+ ELSEIF ((SUBSTRING(SERVER_TARGET, 3, 1) = '-')  AND (SUBSTRING(SERVER_TARGET, 1, 2) = 'targetnz')) THEN	
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+ ELSEIF SUBSTRING(SERVER_TARGET, 1, 2) = 'target' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = '';
+ ELSEIF SUBSTRING(SERVER_TARGET, 1, 2) = 'targetnz' THEN
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprexnz', '_');
+	SET DBTABLE_SUFFIX = CONCAT('_', SERVER_TARGET);
+	SET PRODUCT_PREFIX = 'NZ-';
+ ELSE
+	SET PS_DBNAME = CONCAT('SampleCompany', '_', SERVER_TARGET, '`.`', 'tableprex', '_');
+	SET DBTABLE_SUFFIX = '_au-lego';
+	SET PRODUCT_PREFIX = '';
+ END IF; 
+ 
+SELECT 'To Clean and Update the Branch List for Price Calculation.';
+SELECT 
+    CONCAT('Now it starts: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' ! ', 'Target: ', SERVER_TARGET);
+
+
+/* Clean Temp Tables, especially for those PriceList file generation */
+CALL `SP_Clean_Price_List_TEMPs`(SERVER_TARGET);
+
+/* Also sort out CLEARANCE categories and products */
+CALL `SP_Products_Sort_As_Clearance`(SERVER_TARGET);
+
+
+/* RECREATE PRODUCT TABLE */
+CALL `SP_Exec_Qry`(CONCAT("DROP TABLE IF EXISTS `tab_prex_product", DBTABLE_SUFFIX, "`"));
+
+IF SUBSTRING(DBTABLE_SUFFIX, 2, 2) = 'targetnz' THEN	 
+	 CALL `SP_Exec_Qry`(CONCAT("CREATE TABLE `tab_prex_product", DBTABLE_SUFFIX, "` AS (SELECT `tab_prex_sf_product`.*,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_1_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_2_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_3_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_4_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_5_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_6_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_7_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_8_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_9_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_10_PRICE`,
+		CASE WHEN SUBSTRING(UPPER(`NAME`), 1, 3) = 'VK-' THEN CONCAT('", PRODUCT_PREFIX, "', `NAME`) ELSE `NAME` END AS `tab_prex_PRODUCTCODE`
+		FROM
+	    `tab_prex_sf_product`
+	WHERE
+	    UPPER(`tab_prex_STATUS__C`) NOT IN (UPPER('DELETED')) 
+		 AND UPPER(`tab_prex_DATABASE__C`) = UPPER('Flamestop7_NZ')
+		 ORDER BY `NAME` ASC )"));
+		  
+ELSEIF SUBSTRING(DBTABLE_SUFFIX, 2, 2) = 'target' THEN
+	CALL `SP_Exec_Qry`(CONCAT("CREATE TABLE `tab_prex_product", DBTABLE_SUFFIX, "` AS (SELECT `tab_prex_sf_product`.*,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_1_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_2_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_3_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_4_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_5_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_6_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_7_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_8_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_9_PRICE`,
+	    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_10_PRICE`,
+		`NAME` AS `tab_prex_PRODUCTCODE`
+		FROM
+	    `tab_prex_sf_product`
+	WHERE
+	    UPPER(`tab_prex_STATUS__C`) NOT IN (UPPER('DELETED')) 
+		 AND UPPER(`tab_prex_DATABASE__C`) = UPPER('Flamestop7')
+		 ORDER BY `NAME` ASC )"));
+ELSE
+	/* Do nothing for MEGA, .... */
+	SELECT 'Nothing for MEGA.';
+END IF;
+
+CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `tab_prex_product", DBTABLE_SUFFIX, "` WHERE `tab_prex_PRODUCTCODE` NOT IN (SELECT DISTINCT
+            `unireference`
+        FROM
+            ((SELECT DISTINCT CONCAT('", PRODUCT_PREFIX, "', `reference`) AS `unireference` FROM `", PS_DBNAME, "product`
+        WHERE
+            `active` = 1) 
+			UNION
+			SELECT DISTINCT CONCAT('", PRODUCT_PREFIX, "', `reference`) AS `unireference` FROM `", PS_DBNAME, "product_attribute` WHERE `id_product` IN (SELECT DISTINCT `id_product` FROM `", PS_DBNAME, "product`
+        WHERE
+            `active` = 1)) AS `product_reference_list` );"));
+
+/* Update fs_product TIER_PRICE based on the decision of which row (FS_CURRENT_DATE and FS_FORWARDER_DATE) is closer and not in future date */
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_product", DBTABLE_SUFFIX, "` 
+SET 
+    `FINAL_TIER_1_PRICE` = `tab_prex_TIER_1_PRICE__C`,
+    `FINAL_TIER_2_PRICE` = `tab_prex_TIER_2_PRICE__C`,
+    `FINAL_TIER_3_PRICE` = `tab_prex_TIER_3_PRICE__C`,
+    `FINAL_TIER_4_PRICE` = `tab_prex_TIER_4_PRICE__C`,
+    `FINAL_TIER_5_PRICE` = `tab_prex_TIER_5_PRICE__C`,
+    `FINAL_TIER_6_PRICE` = `tab_prex_TIER_6_PRICE__C`,
+    `FINAL_TIER_7_PRICE` = `tab_prex_TIER_7_PRICE__C`,
+    `FINAL_TIER_8_PRICE` = `tab_prex_TIER_8_PRICE__C`,
+    `FINAL_TIER_9_PRICE` = `tab_prex_TIER_9_PRICE__C`,
+    `FINAL_TIER_10_PRICE` = `tab_prex_TIER_10_PRICE__C`
+WHERE
+    STR_TO_DATE(`tab_prex_CURRENT_DATE__C`, '%Y-%m-%d') <= CURDATE()
+        AND ((STR_TO_DATE(`tab_prex_CURRENT_DATE__C`, '%Y-%m-%d') >= STR_TO_DATE(`tab_prex_FORWARD_DATE__C`, '%Y-%m-%d'))
+        OR (STR_TO_DATE(`tab_prex_CURRENT_DATE__C`, '%Y-%m-%d') <= STR_TO_DATE(`tab_prex_FORWARD_DATE__C`, '%Y-%m-%d')
+        AND STR_TO_DATE(`tab_prex_FORWARD_DATE__C`, '%Y-%m-%d') >= CURDATE()))"));
+
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_product", DBTABLE_SUFFIX, "` 
+SET 
+    `FINAL_TIER_1_PRICE` = `tab_prex_FORWARDED_PRICE_1__C`,
+    `FINAL_TIER_2_PRICE` = `tab_prex_FORWARDED_PRICE_2__C`,
+    `FINAL_TIER_3_PRICE` = `tab_prex_FORWARDED_PRICE_3__C`,
+    `FINAL_TIER_4_PRICE` = `tab_prex_FORWARDED_PRICE_4__C`,
+    `FINAL_TIER_5_PRICE` = `tab_prex_FORWARDED_PRICE_5__C`,
+    `FINAL_TIER_6_PRICE` = `tab_prex_FORWARDED_PRICE_6__C`,
+    `FINAL_TIER_7_PRICE` = `tab_prex_FORWARDED_PRICE_7__C`,
+    `FINAL_TIER_8_PRICE` = `tab_prex_FORWARDED_PRICE_8__C`,
+    `FINAL_TIER_9_PRICE` = `tab_prex_FORWARDED_PRICE_9__C`,
+    `FINAL_TIER_10_PRICE` = `tab_prex_FORWARDED_PRICE_10__C`
+WHERE
+    STR_TO_DATE(`tab_prex_FORWARD_DATE__C`, '%Y-%m-%d') <= CURDATE()
+        AND ((STR_TO_DATE(`tab_prex_FORWARD_DATE__C`, '%Y-%m-%d') >= STR_TO_DATE(`tab_prex_CURRENT_DATE__C`, '%Y-%m-%d'))
+        OR (STR_TO_DATE(`tab_prex_FORWARD_DATE__C`, '%Y-%m-%d') <= STR_TO_DATE(`tab_prex_CURRENT_DATE__C`, '%Y-%m-%d') 
+		AND STR_TO_DATE(`tab_prex_CURRENT_DATE__C`, '%Y-%m-%d') >= CURDATE()))"));		
+		
+SELECT 
+    CONCAT('Product Information Prepared: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');	
+
+
+/* Update the branch list */
+IF SUBSTRING(DBTABLE_SUFFIX, 2, 2) = 'target' THEN
+	CALL `SP_Exec_Qry`(CONCAT("INSERT IGNORE INTO `tab_prex_price_calculation_log` SELECT DISTINCT '", SERVER_TARGET ,"' AS `server`, `tab_prex_BRANCH__C` AS `branch`, 1 AS `in_process_loop`, CURRENT_TIMESTAMP AS `last_updated` FROM `tab_prex_sf_account` WHERE `tab_prex_ACTIVE__C` = 1 AND UPPER(`tab_prex_DATABASE__C`) = UPPER('Flamestop7') ;"));
+
+	CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `tab_prex_price_calculation_log` WHERE `server` = '", SERVER_TARGET ,"' AND `branch` NOT IN ( SELECT DISTINCT `tab_prex_BRANCH__C` FROM `tab_prex_sf_account` WHERE `tab_prex_ACTIVE__C` = 1 AND UPPER(`tab_prex_DATABASE__C`) = UPPER('Flamestop7')) ;"));
+	
+ELSEIF SUBSTRING(DBTABLE_SUFFIX, 2, 2) = 'targetnz' THEN
+	CALL `SP_Exec_Qry`(CONCAT("INSERT IGNORE INTO `tab_prex_price_calculation_log` SELECT DISTINCT '", SERVER_TARGET ,"' AS `server`, `tab_prex_BRANCH__C` AS `branch`, 1 AS `in_process_loop`, CURRENT_TIMESTAMP AS `last_updated` FROM `tab_prex_sf_account` WHERE `tab_prex_ACTIVE__C` = 1 AND UPPER(`tab_prex_DATABASE__C`) = UPPER('Flamestop7_NZ') ;"));
+
+	CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `tab_prex_price_calculation_log` WHERE `server` = '", SERVER_TARGET ,"' AND `branch` NOT IN ( SELECT DISTINCT `tab_prex_BRANCH__C` FROM `tab_prex_sf_account` WHERE `tab_prex_ACTIVE__C` = 1 AND UPPER(`tab_prex_DATABASE__C`) = UPPER('Flamestop7_NZ')) ;"));
+	
+ELSE
+	/* MEGAFire */
+	CALL `SP_Exec_Qry`(CONCAT("INSERT IGNORE INTO `tab_prex_price_calculation_log` SELECT DISTINCT '", SERVER_TARGET ,"' AS `server`, `tab_prex_BRANCH__C` AS `branch`, 1 AS `in_process_loop`, CURRENT_TIMESTAMP AS `last_updated` FROM `tab_prex_sf_account` WHERE `tab_prex_ACTIVE__C` = 1 AND UPPER(`tab_prex_DATABASE__C`) NOT IN (UPPER('Flamestop7'), UPPER('Flamestop7_NZ')) ;"));
+
+	CALL `SP_Exec_Qry`(CONCAT("DELETE FROM `tab_prex_price_calculation_log` WHERE `server` = '", SERVER_TARGET ,"' AND `branch` NOT IN ( SELECT DISTINCT `tab_prex_BRANCH__C` FROM `tab_prex_sf_account` WHERE `tab_prex_ACTIVE__C` = 1 AND UPPER(`tab_prex_DATABASE__C`) NOT IN (UPPER('Flamestop7'), UPPER('Flamestop7_NZ'))) ;"));
+
+END IF;
+
+
+/* Reset ALL Processes if whole completed */ 
+SET @branch_in_queue = (SELECT COUNT(`branch`) FROM `tab_prex_price_calculation_log` WHERE `server` =  SERVER_TARGET AND `in_process_loop` = 1 );
+IF @branch_in_queue = 0 THEN
+	CALL `SP_Exec_Qry`(CONCAT("UPDATE `tab_prex_price_calculation_log` SET `in_process_loop` = 1 WHERE `server` = '", SERVER_TARGET ,"' AND `in_process_loop` = 0 ;"));
+	
+	/* Clean Out the records of disabled account/companies in the final result tables */
+	SET @@session.unique_checks = 0;
+	SET @@session.foreign_key_checks = 0;
+	
+	START TRANSACTION;
+		CALL `SP_Exec_Qry`(CONCAT("ALTER TABLE `tab_prex_product_company_price_branches", DBTABLE_SUFFIX, "` DISABLE KEYS;"));
+		CALL `SP_Exec_Qry`(CONCAT("DROP TABLE IF EXISTS `", PS_DBNAME, "product_company_price_EXP`;"));
+		CALL `SP_Exec_Qry`(CONCAT("CREATE TABLE `", PS_DBNAME, "product_company_price_EXP` LIKE `tab_prex_product_company_price_branches", DBTABLE_SUFFIX, "`;"));
+		CALL `SP_Exec_Qry`(CONCAT("INSERT IGNORE `", PS_DBNAME, "product_company_price_EXP` SELECT * FROM `tab_prex_product_company_price_branches", DBTABLE_SUFFIX, "`;"));
+		CALL `SP_Exec_Qry`(CONCAT("TRUNCATE TABLE `tab_prex_product_company_price_branches", DBTABLE_SUFFIX, "`;"));
+		CALL `SP_Exec_Qry`(CONCAT("ALTER TABLE `tab_prex_product_company_price_branches", DBTABLE_SUFFIX, "` ENABLE KEYS;"));
+	COMMIT;
+	
+	SET @@session.unique_checks = 1;
+	SET @@session.foreign_key_checks = 1;
+	
+	SELECT CONCAT('Clone is done. Now start to index: ',
+		DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+			' !');
+
+	START TRANSACTION;
+		CALL `SP_Exec_Qry`(CONCAT("CREATE UNIQUE INDEX IF NOT EXISTS `index_fs_product_company_price", DBTABLE_SUFFIX, "` ON `tab_prex_product_company_price_branches", DBTABLE_SUFFIX, "` (`reference`, `ACCOUNT_ID`);"));
+		
+		CALL `SP_Exec_Qry`(CONCAT("CREATE INDEX IF NOT EXISTS `index_fs_product_customer", DBTABLE_SUFFIX, "` ON `", PS_DBNAME, "product_company_price_EXP` (`ACCOUNT_ID`);"));
+		CALL `SP_Exec_Qry`(CONCAT("CREATE UNIQUE INDEX IF NOT EXISTS `index_fs_product_company_price", DBTABLE_SUFFIX, "` ON `", PS_DBNAME, "product_company_price_EXP` (`reference`, `ACCOUNT_ID`);"));
+	COMMIT;
+
+	SELECT CONCAT('Now indexing ends: ',
+		DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+			' !');
+ELSE
+	SELECT CONCAT(@branch_in_queue, ' Branches still under processing.');
+END IF;
+
+
+SELECT CONCAT('The Branch List and Price Table has been rechecked ! ' , 'Target: ', SERVER_TARGET);
+
+SET sql_mode = 'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
+
+END

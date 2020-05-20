@@ -1,0 +1,7 @@
+CREATE PROCEDURE SP_Exec_Qry( p_sql varchar(4096))
+BEGIN
+  SET @tquery = p_sql;
+  PREPARE stmt FROM @tquery;
+  EXECUTE stmt;
+  DEALLOCATE PREPARE stmt;
+END 

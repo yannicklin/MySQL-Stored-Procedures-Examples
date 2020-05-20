@@ -1,0 +1,531 @@
+CREATE PROCEDURE `SP_Customer_New_Records`(OUT RUNNING_RESULT VARCHAR(50))
+BEGIN
+ DECLARE COOKIE_KEY VARCHAR(50);
+ DECLARE RAND_MAX int;
+ DECLARE PS_DBNAME VARCHAR(50);
+ 
+ /* PASSWORD: md5(_COOKIE_KEY_.rand()); */
+ /* PASSWORD SQL: MD5(CONCAT(COOKIE_KEY, FLOOR(RAND()*RAND_MAX))); */
+ 
+ SET COOKIE_KEY = 'COOKIESCOOKIES'; /* Same setting in PrestaShop */
+ SET RAND_MAX = 1111111111; /* 32-bit OS PHP */
+ SET PS_DBNAME = 'database_test';
+
+SELECT 'This procedure is to create the Customer records based on the Contact & Account tables of SalesForce.';
+SELECT 
+    CONCAT('Now it starts: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+ 
+/* ZERO! Prepare the SF table as Ranked */
+DROP TEMPORARY TABLE IF EXISTS `tab_prex_sf_contact_ranked`;
+CREATE TEMPORARY TABLE `tab_prex_sf_contact_ranked` ENGINE=MEMORY AS (
+SELECT 
+    `CONTACT_ID`,
+	`LASTNAME`,
+	`FIRSTNAME`,
+	`SALUTATION`,
+	`CONTACT`,
+	`EMAIL`,
+	`PHONE`,
+	`MOBILEPHONE`,
+	`ACCOUNT`,
+	`tab_prex_BRANCH__C`,
+	`tab_prex_COMPANY_NAME__C`,
+	`ACCOUNT_PHONE`,
+	`BILLINGCOUNTRY`,
+	`BILLINGPOSTALCODE`,
+	`BILLINGSTATE`,
+	`BILLINGCITY`,
+	`BILLINGSTREET`,
+	`SHIPPINGCOUNTRY`,
+	`SHIPPINGPOSTALCODE`,
+	`SHIPPINGSTATE`,
+	`SHIPPINGCITY`,
+	`SHIPPINGSTREET`,
+	`sf_contact_rank`
+FROM
+    (SELECT b.*, 
+         @rn :=  CASE WHEN `EMAIL` = @currEmail
+                      THEN @rn + 1
+                      ELSE 1 
+                    END AS `sf_contact_rank`
+         , @currEmail := `EMAIL`
+	FROM (SELECT * FROM
+	(SELECT 
+        `tab_prex_sf_contact`.`ID` AS `CONTACT_ID`,
+            `tab_prex_sf_contact`.`LASTNAME`,
+            `tab_prex_sf_contact`.`FIRSTNAME`,
+            `tab_prex_sf_contact`.`SALUTATION`,
+            `tab_prex_sf_contact`.`NAME` AS `CONTACT`,
+            `tab_prex_sf_contact`.`EMAIL`,
+            `tab_prex_sf_contact`.`PHONE`,
+            `tab_prex_sf_contact`.`MOBILEPHONE`,
+            `tab_prex_sf_account`.`NAME` AS `ACCOUNT`,
+            `tab_prex_sf_account`.`tab_prex_BRANCH__C`,
+            `tab_prex_sf_account`.`tab_prex_COMPANY_NAME__C`,
+            `tab_prex_sf_account`.`PHONE` AS `ACCOUNT_PHONE`,
+            `tab_prex_sf_account`.`BILLINGCOUNTRY`,
+            `tab_prex_sf_account`.`BILLINGPOSTALCODE`,
+            `tab_prex_sf_account`.`BILLINGSTATE`,
+            `tab_prex_sf_account`.`BILLINGCITY`,
+            `tab_prex_sf_account`.`BILLINGSTREET`,
+            `tab_prex_sf_account`.`SHIPPINGCOUNTRY`,
+            `tab_prex_sf_account`.`SHIPPINGPOSTALCODE`,
+            `tab_prex_sf_account`.`SHIPPINGSTATE`,
+            `tab_prex_sf_account`.`SHIPPINGCITY`,
+            `tab_prex_sf_account`.`SHIPPINGSTREET`
+    FROM
+        `tab_prex_sf_contact`
+    INNER JOIN `tab_prex_sf_account` ON `tab_prex_sf_contact`.`ACCOUNTID` = `tab_prex_sf_account`.`ID`
+    WHERE
+        `tab_prex_sf_contact`.`tab_prex_ACTIVE__C` = 1 AND `tab_prex_sf_account`.`tab_prex_ACTIVE__C` = 1
+		AND UPPER(`tab_prex_sf_contact`.`NAME`) NOT LIKE '%ACCOUNTS PAYABLE%') AS a CROSS JOIN (SELECT @currEmail:=null, @rn:=0) AS params ORDER BY a.`EMAIL` ASC, a.`CONTACT_ID` ASC ) AS b
+			ORDER BY b.`EMAIL` ASC, b.`CONTACT_ID` ASC) AS c
+);
+
+
+/* First , find out the duplicate Email Account */
+DROP TEMPORARY TABLE IF EXISTS `tab_prex_sf_contact_duplciate_email_list`;
+CREATE TEMPORARY TABLE `tab_prex_sf_contact_duplciate_email_list` ENGINE=MEMORY AS (SELECT DISTINCT `EMAIL` FROM `tab_prex_sf_contact_ranked` WHERE `sf_contact_rank` > 1);
+
+INSERT INTO `tab_prex_sf_contact_import_issues` (
+	`SF_CONTACT_ID`,
+	`SF_FIRSTNAME`,
+	`SF_LASTNAME`,
+	`SF_SALUTATION`,
+	`SF_CONTACT`,
+	`SF_EMAIL`,
+	`SF_PHONE`,
+	`SF_MOBILEPHONE`,
+	`SF_ACCOUNT`,
+	`SF_ACCOUNT_PHONE`,
+	`SF_BRANCH`,
+	`SF_COMPANY_NAME`,
+	`tab_prex_id_customer`,
+	`tab_prex_firstname`,
+	`tab_prex_lastname`,
+	`tab_prex_company`,
+	`tab_prex_email`,
+	`Issue`,
+	`Rec_Time`) 
+	SELECT 
+	`CONTACT_ID`,
+	`FIRSTNAME`,
+	`LASTNAME`,
+	`SALUTATION`,
+	`CONTACT`,
+	`EMAIL`,
+	`PHONE`,
+	`MOBILEPHONE`,
+	`ACCOUNT`,
+	`ACCOUNT_PHONE`,
+	`tab_prex_BRANCH__C`,
+	`tab_prex_COMPANY_NAME__C`,
+	null,
+	null,
+	null,
+	null,
+	null,
+	'Duplicate Emails in SalesForce DB',
+	CURRENT_TIMESTAMP FROM
+	`tab_prex_sf_contact_ranked`
+WHERE
+	`EMAIL` IN (SELECT `EMAIL` FROM `tab_prex_sf_contact_duplciate_email_list` ) 
+ORDER BY `EMAIL` , `CONTACT`;
+
+DROP TEMPORARY TABLE IF EXISTS `tab_prex_sf_contact_duplciate_email_list`;
+
+
+SELECT 
+    CONCAT('Step 1 completed: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+
+/* Second, get those new SF account but cannot insert */
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `tab_prex_sf_contact_import_issues` (
+	`SF_CONTACT_ID`,
+	`SF_FIRSTNAME`,
+	`SF_LASTNAME`,
+	`SF_SALUTATION`,
+	`SF_CONTACT`,
+	`SF_EMAIL`,
+	`SF_PHONE`,
+	`SF_MOBILEPHONE`,
+	`SF_ACCOUNT`,
+	`SF_ACCOUNT_PHONE`,
+	`SF_BRANCH`,
+	`SF_COMPANY_NAME`,
+	`tab_prex_id_customer`,
+	`tab_prex_firstname`,
+	`tab_prex_lastname`,
+	`tab_prex_company`,
+	`tab_prex_email`,
+	`Issue`,
+	`Rec_Time`) 
+	SELECT 
+	`CONTACT_ID`,
+	`FIRSTNAME`,
+	`LASTNAME`,
+	`SALUTATION`,
+	`CONTACT`,
+	`EMAIL`,
+	`PHONE`,
+	`MOBILEPHONE`,
+	`ACCOUNT`,
+	`ACCOUNT_PHONE`,
+	`tab_prex_BRANCH__C`,
+	`tab_prex_COMPANY_NAME__C`,
+	null,
+	null,
+	null,
+	null,
+	null,
+	'Existed Email in PrestaShop But This SalesForce Contact is new',
+	CURRENT_TIMESTAMP FROM
+	`tab_prex_sf_contact_ranked`
+WHERE
+	`sf_contact_rank` = 1 AND
+	`CONTACT_ID` NOT IN (SELECT `CONTACT_ID` FROM `tab_prex_sf_contact_customer_mapping`) AND `EMAIL` IN (SELECT `email` FROM `", PS_DBNAME, "`.`kuom_customer`)
+ORDER BY `EMAIL` , `CONTACT`"));
+
+
+SELECT 
+    CONCAT('Step 2 completed: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+
+/* Third, get those existing SF account but detail changes */
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `tab_prex_sf_contact_import_issues` (
+	`SF_CONTACT_ID`,
+	`SF_FIRSTNAME`,
+	`SF_LASTNAME`,
+	`SF_SALUTATION`,
+	`SF_CONTACT`,
+	`SF_EMAIL`,
+	`SF_PHONE`,
+	`SF_MOBILEPHONE`,
+	`SF_ACCOUNT`,
+	`SF_ACCOUNT_PHONE`,
+	`SF_BRANCH`,
+	`SF_COMPANY_NAME`,
+	`tab_prex_id_customer`,
+	`tab_prex_firstname`,
+	`tab_prex_lastname`,
+	`tab_prex_company`,
+	`tab_prex_email`,
+	`Issue`,
+	`Rec_Time`) 
+	SELECT 
+	`tab_prex_sf_contact_ranked`.`CONTACT_ID`,
+	`tab_prex_sf_contact_ranked`.`FIRSTNAME`,
+	`tab_prex_sf_contact_ranked`.`LASTNAME`,
+	`tab_prex_sf_contact_ranked`.`SALUTATION`,
+	`tab_prex_sf_contact_ranked`.`CONTACT`,
+	`tab_prex_sf_contact_ranked`.`EMAIL`,
+	`tab_prex_sf_contact_ranked`.`PHONE`,
+	`tab_prex_sf_contact_ranked`.`MOBILEPHONE`,
+	`tab_prex_sf_contact_ranked`.`ACCOUNT`,
+	`tab_prex_sf_contact_ranked`.`ACCOUNT_PHONE`,
+	`tab_prex_sf_contact_ranked`.`tab_prex_BRANCH__C`,
+	`tab_prex_sf_contact_ranked`.`tab_prex_COMPANY_NAME__C`,
+	`kuom_customer`.`id_customer`,
+	`kuom_customer`.`firstname`,
+	`kuom_customer`.`lastname`,
+	`kuom_customer`.`company`,
+	`kuom_customer`.`email`,
+	'Existed in both Database but the different details',
+	CURRENT_TIMESTAMP FROM
+	`tab_prex_sf_contact_ranked`
+	INNER JOIN `tab_prex_sf_contact_customer_mapping` ON `tab_prex_sf_contact_ranked`.`CONTACT_ID` = `tab_prex_sf_contact_customer_mapping`.`CONTACT_ID` INNER JOIN `", PS_DBNAME, "`.`kuom_customer` AS `kuom_customer` ON `tab_prex_sf_contact_customer_mapping`.`id_customer` = `kuom_customer`.`id_customer`
+	WHERE 
+	`tab_prex_sf_contact_ranked`.`sf_contact_rank` = 1
+	AND (
+	`tab_prex_sf_contact_ranked`.`FIRSTNAME` != `kuom_customer`.`firstname` OR `tab_prex_sf_contact_ranked`.`LASTNAME` != `kuom_customer`.`lastname` OR `tab_prex_sf_contact_ranked`.`tab_prex_COMPANY_NAME__C` != `kuom_customer`.`company`
+	)
+ORDER BY `tab_prex_sf_contact_ranked`.`EMAIL` , `tab_prex_sf_contact_ranked`.`CONTACT`"));
+
+
+SELECT 
+    CONCAT('Step 3 completed: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+
+/* Fourth, get those new SF account but insufficient field info */
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `tab_prex_sf_contact_import_issues` (
+	`SF_CONTACT_ID`,
+	`SF_FIRSTNAME`,
+	`SF_LASTNAME`,
+	`SF_SALUTATION`,
+	`SF_CONTACT`,
+	`SF_EMAIL`,
+	`SF_PHONE`,
+	`SF_MOBILEPHONE`,
+	`SF_ACCOUNT`,
+	`SF_ACCOUNT_PHONE`,
+	`SF_BRANCH`,
+	`SF_COMPANY_NAME`,
+	`tab_prex_id_customer`,
+	`tab_prex_firstname`,
+	`tab_prex_lastname`,
+	`tab_prex_company`,
+	`tab_prex_email`,
+	`Issue`,
+	`Rec_Time`) 
+	SELECT 
+	`CONTACT_ID`,
+	`FIRSTNAME`,
+	`LASTNAME`,
+	`SALUTATION`,
+	`CONTACT`,
+	`EMAIL`,
+	`PHONE`,
+	`MOBILEPHONE`,
+	`ACCOUNT`,
+	`ACCOUNT_PHONE`,
+	`tab_prex_BRANCH__C`,
+	`tab_prex_COMPANY_NAME__C`,
+	null,
+	null,
+	null,
+	null,
+	null,
+	'Unable to create for the lack of essential fields',
+	CURRENT_TIMESTAMP FROM
+	`tab_prex_sf_contact_ranked`
+WHERE
+	`sf_contact_rank` = 1 AND ((COALESCE(`EMAIL`, '') = '') OR (COALESCE(`FIRSTNAME`, '') = '') OR (COALESCE(`LASTNAME`, '') = '') OR (COALESCE(`ACCOUNT`, '') = '')) AND
+	`CONTACT_ID` NOT IN (SELECT `CONTACT_ID` FROM `tab_prex_sf_contact_customer_mapping`) AND `EMAIL` NOT IN (SELECT `email` FROM `", PS_DBNAME, "`.`kuom_customer`)
+ORDER BY `EMAIL` , `CONTACT`"));
+
+
+SELECT 
+    CONCAT('Step 4 completed: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+
+/* Fifth, get those new SF account */
+DROP TEMPORARY TABLE IF EXISTS `tab_prex_sf_contact_prepared_append`;
+CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `tab_prex_sf_contact_prepared_append` ENGINE=MEMORY AS (SELECT 
+	`CONTACT_ID`,
+	`FIRSTNAME`,
+	`LASTNAME`,
+	`SALUTATION`,
+	`CONTACT`,
+	`EMAIL`,
+	`PHONE`,
+	`MOBILEPHONE`,
+	`ACCOUNT`,
+	`ACCOUNT_PHONE`,
+	`tab_prex_BRANCH__C`,
+	`tab_prex_COMPANY_NAME__C`,
+	CASE UPPER(TRIM(`BILLINGCOUNTRY`)) WHEN UPPER('Australia') THEN 24 WHEN UPPER('AUST') THEN 24 WHEN UPPER('New Zealand') THEN 27 WHEN UPPER('targetnz') THEN 27 ELSE 0 END AS `BILLING_COUNTRY_ID`,
+	CASE UPPER(TRIM(`BILLINGSTATE`)) WHEN UPPER('ACT') THEN 313 WHEN UPPER('VIC') THEN 314 WHEN UPPER('TAS') THEN 315 WHEN UPPER('NSW') THEN 316 WHEN UPPER('NT') THEN 317 WHEN UPPER('QLD') THEN 318 WHEN UPPER('SA') THEN 319 WHEN UPPER('WA') THEN 320 ELSE 0 END AS `BILLING_STATE_ID`,
+	IF(TRIM(`BILLINGPOSTALCODE`) IS NULL or TRIM(`BILLINGPOSTALCODE`) = '', '0000', TRIM(`BILLINGPOSTALCODE`)) AS `BILLINGPOSTALCODE`,
+	TRIM(`BILLINGCITY`) AS `BILLINGCITY`,
+	TRIM(`BILLINGSTREET`) AS `BILLINGSTREET`,
+	CASE UPPER(TRIM(`SHIPPINGCOUNTRY`)) WHEN UPPER('Australia') THEN 24 WHEN UPPER('AUST') THEN 24 WHEN UPPER('New Zealand') THEN 27 WHEN UPPER('targetnz') THEN 27 ELSE 0 END AS `SHIPPING_COUNTRY_ID`,
+	CASE UPPER(TRIM(`SHIPPINGSTATE`)) WHEN UPPER('ACT') THEN 313 WHEN UPPER('VIC') THEN 314 WHEN UPPER('TAS') THEN 315 WHEN UPPER('NSW') THEN 316 WHEN UPPER('NT') THEN 317 WHEN UPPER('QLD') THEN 318 WHEN UPPER('SA') THEN 319 WHEN UPPER('WA') THEN 320 ELSE 0 END AS `SHIPPING_STATE_ID`,
+	IF(TRIM(`SHIPPINGPOSTALCODE`) IS NULL or TRIM(`SHIPPINGPOSTALCODE`) = '', '0000', TRIM(`SHIPPINGPOSTALCODE`)) AS `SHIPPINGPOSTALCODE`,
+	TRIM(`SHIPPINGCITY`) AS `SHIPPINGCITY`,
+	TRIM(`SHIPPINGSTREET`) AS `SHIPPINGSTREET`
+	FROM
+	`tab_prex_sf_contact_ranked`
+WHERE
+	`sf_contact_rank` = 1 AND ((COALESCE(`EMAIL`, '') != '') AND (COALESCE(`FIRSTNAME`, '') != '') AND (COALESCE(`LASTNAME`, '') != '') AND (COALESCE(`ACCOUNT`, '') != '')) AND
+	`CONTACT_ID` NOT IN (SELECT `CONTACT_ID` FROM `tab_prex_sf_contact_customer_mapping`) AND `EMAIL` NOT IN (SELECT `email` FROM `", PS_DBNAME, "`.`kuom_customer`)
+ORDER BY `EMAIL` , `CONTACT`)"));
+
+CALL `SP_Exec_Qry`(CONCAT("ALTER TABLE `", PS_DBNAME, "`.`kuom_customer` AUTO_INCREMENT = 1"));
+
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `", PS_DBNAME, "`.`kuom_customer` (`id_gender`, `id_default_group`, `firstname`, `lastname`, `email`, `passwd`, `secure_key`, `company`, `date_add`, `date_upd`, `id_lang`) SELECT 1, 3, `FIRSTNAME`, `LASTNAME`, `EMAIL`, MD5(CONCAT('", COOKIE_KEY, "', FLOOR(RAND()*", RAND_MAX, "))), MD5(CONCAT('", COOKIE_KEY, "', FLOOR(RAND()*", RAND_MAX, "))), `ACCOUNT`, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1 FROM `tab_prex_sf_contact_prepared_append` WHERE `SALUTATION` = 'Mr.'"));
+
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `", PS_DBNAME, "`.`kuom_customer` (`id_gender`, `id_default_group`, `firstname`, `lastname`, `email`, `passwd`, `secure_key`, `company`, `date_add`, `date_upd`, `id_lang`) SELECT 2, 3, `FIRSTNAME`, `LASTNAME`, `EMAIL`, MD5(CONCAT('", COOKIE_KEY, "', FLOOR(RAND()*", RAND_MAX, "))), MD5(CONCAT('", COOKIE_KEY, "', FLOOR(RAND()*", RAND_MAX, "))), `ACCOUNT`, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1 FROM `tab_prex_sf_contact_prepared_append` WHERE `SALUTATION` = 'Mrs.'"));
+
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `", PS_DBNAME, "`.`kuom_customer` (`id_gender`, `id_default_group`, `firstname`, `lastname`, `email`, `passwd`, `secure_key`, `company`, `date_add`, `date_upd`, `id_lang`) SELECT 3, 3, `FIRSTNAME`, `LASTNAME`, `EMAIL`, MD5(CONCAT('", COOKIE_KEY, "', FLOOR(RAND()*", RAND_MAX, "))), MD5(CONCAT('", COOKIE_KEY, "', FLOOR(RAND()*", RAND_MAX, "))), `ACCOUNT`, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1 FROM `tab_prex_sf_contact_prepared_append` WHERE `SALUTATION` = 'Ms.'"));
+
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `", PS_DBNAME, "`.`kuom_customer` (`id_gender`, `id_default_group`, `firstname`, `lastname`, `email`, `passwd`, `secure_key`, `company`, `date_add`, `date_upd`, `id_lang`) SELECT 0, 3, `FIRSTNAME`, `LASTNAME`, `EMAIL`, MD5(CONCAT('", COOKIE_KEY, "', FLOOR(RAND()*", RAND_MAX, "))), MD5(CONCAT('", COOKIE_KEY, "', FLOOR(RAND()*", RAND_MAX, "))), `ACCOUNT`, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1 FROM `tab_prex_sf_contact_prepared_append` WHERE `SALUTATION` NOT IN ('Mr.', 'Mrs.', 'Ms.')"));
+
+
+SELECT 
+    CONCAT('Step 5.1 completed: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+
+DROP TEMPORARY TABLE IF EXISTS `tab_prex_sf_contact_new_appendded`;
+CALL `SP_Exec_Qry`(CONCAT("CREATE TEMPORARY TABLE `tab_prex_sf_contact_new_appendded` ENGINE=MEMORY AS (SELECT
+	`tab_prex_sf_contact_prepared_append`.`CONTACT_ID`,
+	`tab_prex_sf_contact_prepared_append`.`FIRSTNAME`,
+	`tab_prex_sf_contact_prepared_append`.`LASTNAME`,
+	`tab_prex_sf_contact_prepared_append`.`SALUTATION`,
+	`tab_prex_sf_contact_prepared_append`.`CONTACT`,
+	`tab_prex_sf_contact_prepared_append`.`EMAIL`,
+	`tab_prex_sf_contact_prepared_append`.`PHONE`,
+	`tab_prex_sf_contact_prepared_append`.`MOBILEPHONE`,
+	`tab_prex_sf_contact_prepared_append`.`ACCOUNT`,
+	`tab_prex_sf_contact_prepared_append`.`ACCOUNT_PHONE`,
+	`tab_prex_sf_contact_prepared_append`.`tab_prex_BRANCH__C`,
+	`tab_prex_sf_contact_prepared_append`.`tab_prex_COMPANY_NAME__C`,
+	`tab_prex_sf_contact_prepared_append`.`BILLING_COUNTRY_ID`,
+	`tab_prex_sf_contact_prepared_append`.`BILLING_STATE_ID`,
+	`tab_prex_sf_contact_prepared_append`.`BILLINGPOSTALCODE`,
+	`tab_prex_sf_contact_prepared_append`.`BILLINGCITY`,
+	`tab_prex_sf_contact_prepared_append`.`BILLINGSTREET`,
+	`tab_prex_sf_contact_prepared_append`.`SHIPPING_COUNTRY_ID`,
+	`tab_prex_sf_contact_prepared_append`.`SHIPPING_STATE_ID`,
+	`tab_prex_sf_contact_prepared_append`.`SHIPPINGPOSTALCODE`,
+	`tab_prex_sf_contact_prepared_append`.`SHIPPINGCITY`,
+	`tab_prex_sf_contact_prepared_append`.`SHIPPINGSTREET`,
+	`kuom_customer`.`id_customer`
+	FROM
+	`tab_prex_sf_contact_prepared_append` INNER JOIN `", PS_DBNAME, "`.`kuom_customer` AS `kuom_customer` ON `tab_prex_sf_contact_prepared_append`.`EMAIL` = `kuom_customer`.`email`)"));
+
+
+	/* Append the records in Customer Group, with id_group = 3, which means 'CUSTOMER' */ 
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `", PS_DBNAME, "`.`kuom_customer_group` (`id_customer`, `id_group`) SELECT `id_customer`, 3 as `id_group` FROM `tab_prex_sf_contact_new_appendded`"));	
+	
+SELECT 
+    CONCAT('Step 5.2 completed: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+	
+	/* Add Customer Default Branch Information */
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `", PS_DBNAME, "`.`kuom_customer_fsbranch` (`id_customer`, `branch`, `emails`, `location`, `phone`) SELECT `id_customer`, CONCAT('Local Branch - ', `tab_prex_BRANCH__C`) AS `Branch`, null AS `Emails`, '70-82 Burchill Street, LOGANHOLME, QLD 4129' AS `Location`, '07 3290 1169' as `PHONE` FROM `tab_prex_sf_contact_new_appendded` WHERE UPPER(`tab_prex_BRANCH__C`) = UPPER('Brisbane')"));
+
+SELECT 
+    CONCAT('Step 5.3.1 completed: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `", PS_DBNAME, "`.`kuom_customer_fsbranch` (`id_customer`, `branch`, `emails`, `location`, `phone`) SELECT `id_customer`, CONCAT('Local Branch - ', `tab_prex_BRANCH__C`) AS `Branch`, null AS `Emails`, '16 Davis Road, WETHERILL PARK, NSW 2164' AS `Location`, '02 9725 3322' as `PHONE` FROM `tab_prex_sf_contact_new_appendded` WHERE UPPER(`tab_prex_BRANCH__C`) = UPPER('Wetherill Park')"));
+
+SELECT 
+    CONCAT('Step 5.3.2 completed: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `", PS_DBNAME, "`.`kuom_customer_fsbranch` (`id_customer`, `branch`, `emails`, `location`, `phone`) SELECT `id_customer`, CONCAT('Local Branch - ', `tab_prex_BRANCH__C`) AS `Branch`, null AS `Emails`, '4/23 Kelletts Road, ROWVILLE, VIC 3178' AS `Location`, '03 8706 4900' as `PHONE` FROM `tab_prex_sf_contact_new_appendded` WHERE UPPER(`tab_prex_BRANCH__C`) = UPPER('Melbourne')"));
+
+SELECT 
+    CONCAT('Step 5.3.3 completed: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `", PS_DBNAME, "`.`kuom_customer_fsbranch` (`id_customer`, `branch`, `emails`, `location`, `phone`) SELECT `id_customer`, CONCAT('Local Branch - ', `tab_prex_BRANCH__C`) AS `Branch`, null AS `Emails`, '18/547 Woolcock Street, MOUNT LOUISA, QLD 4814' AS `Location`, '07 4774 8199' as `PHONE` FROM `tab_prex_sf_contact_new_appendded` WHERE UPPER(`tab_prex_BRANCH__C`) = UPPER('Townsville')"));
+
+SELECT 
+    CONCAT('Step 5.3.4 completed: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `", PS_DBNAME, "`.`kuom_customer_fsbranch` (`id_customer`, `branch`, `emails`, `location`, `phone`) SELECT `id_customer`, CONCAT('Local Branch - ', `tab_prex_BRANCH__C`) AS `Branch`, null AS `Emails`, '59 Ashwin Parade, TORRENSVILLE, SA 5031' AS `Location`, '08 8354 2408' as `PHONE` FROM `tab_prex_sf_contact_new_appendded` WHERE UPPER(`tab_prex_BRANCH__C`) = UPPER('Adelaide')"));
+
+SELECT 
+    CONCAT('Step 5.3.5 completed: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `", PS_DBNAME, "`.`kuom_customer_fsbranch` (`id_customer`, `branch`, `emails`, `location`, `phone`) SELECT `id_customer`, CONCAT('Local Branch - ', `tab_prex_BRANCH__C`) AS `Branch`, null AS `Emails`, '3 Millrose Drive, MALAGA, WA 6090' AS `Location`, '08 9248 8599' as `PHONE` FROM `tab_prex_sf_contact_new_appendded` WHERE UPPER(`tab_prex_BRANCH__C`) = UPPER('Perth')"));
+
+SELECT 
+    CONCAT('Step 5.3.6 completed: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+			
+			
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `", PS_DBNAME, "`.`kuom_customer_fsbranch` (`id_customer`, `branch`, `emails`, `location`, `phone`) SELECT `id_customer`, CONCAT('Local Branch - ', `tab_prex_BRANCH__C`) AS `Branch`, null AS `Emails`, '1/70 Lower Gibbes Street, CHATSWOOD, NSW 2067' AS `Location`, '02 9932 2020' as `PHONE` FROM `tab_prex_sf_contact_new_appendded` WHERE UPPER(`tab_prex_BRANCH__C`) = UPPER('Sydney')"));
+
+SELECT 
+    CONCAT('Step 5.3.7 completed: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `", PS_DBNAME, "`.`kuom_customer_fsbranch` (`id_customer`, `branch`, `emails`, `location`, `phone`) SELECT `id_customer`, CONCAT('Local Branch - ', `tab_prex_BRANCH__C`) AS `Branch`, null AS `Emails`, '1/70 Lower Gibbes Street, CHATSWOOD, NSW 2067' AS `Location`, '02 9932 2020' as `PHONE` FROM `tab_prex_sf_contact_new_appendded` WHERE UPPER(`tab_prex_BRANCH__C`) NOT IN (UPPER('Brisbane'), UPPER('Wetherill Park'), UPPER('Melbourne'), UPPER('Townsville'), UPPER('Adelaide'), UPPER('Perth'), UPPER('Sydney'))"));
+
+SELECT 
+    CONCAT('Step 5.3.8 completed: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+
+/* Add Default Billing/Shipping Address with Customer Info */
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `", PS_DBNAME, "`.`kuom_address` (`id_country`, `id_state`, `id_customer`, `firstname`, `lastname`, `alias`, `company`, `address1`, `postcode`, `city`, `date_add`, `date_upd`, `phone`) SELECT DISTINCT `BILLING_COUNTRY_ID`, `BILLING_STATE_ID`, `id_customer`, `FIRSTNAME`, `LASTNAME`, 'Default Billing' AS `Alias`, `ACCOUNT`, `BILLINGSTREET`, `BILLINGPOSTALCODE`, `BILLINGCITY`, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, `ACCOUNT_PHONE` FROM `tab_prex_sf_contact_new_appendded`"));
+
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `", PS_DBNAME, "`.`kuom_address` (`id_country`, `id_state`, `id_customer`, `firstname`, `lastname`, `alias`, `company`, `address1`, `postcode`, `city`, `date_add`, `date_upd`, `phone`, `phone_mobile`) SELECT DISTINCT `SHIPPING_COUNTRY_ID`, `SHIPPING_STATE_ID`, `id_customer`, `FIRSTNAME`, `LASTNAME`, 'Default Shipping' AS `Alias`, `ACCOUNT`, `SHIPPINGSTREET`, `SHIPPINGPOSTALCODE`, `SHIPPINGCITY`, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, `PHONE`, `MOBILEPHONE` FROM `tab_prex_sf_contact_new_appendded`"));
+
+SELECT 
+    CONCAT('Step 5.4 completed: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `tab_prex_sf_contact_customer_mapping` (`CONTACT_ID`, `id_customer`, `EMAIL`, `Rec_Time`) SELECT DISTINCT `CONTACT_ID`, `id_customer`, `EMAIL`, CURRENT_TIMESTAMP FROM `tab_prex_sf_contact_new_appendded`"));
+
+INSERT INTO `tab_prex_sf_contact_import_issues` (
+	`SF_CONTACT_ID`,
+	`SF_FIRSTNAME`,
+	`SF_LASTNAME`,
+	`SF_SALUTATION`,
+	`SF_CONTACT`,
+	`SF_EMAIL`,
+	`SF_PHONE`,
+	`SF_MOBILEPHONE`,
+	`SF_ACCOUNT`,
+	`SF_ACCOUNT_PHONE`,
+	`SF_BRANCH`,
+	`SF_COMPANY_NAME`,
+	`tab_prex_id_customer`,
+	`tab_prex_firstname`,
+	`tab_prex_lastname`,
+	`tab_prex_company`,
+	`tab_prex_email`,
+	`Issue`,
+	`Rec_Time`) 
+	SELECT 
+	`CONTACT_ID`,
+	`FIRSTNAME`,
+	`LASTNAME`,
+	`SALUTATION`,
+	`CONTACT`,
+	`EMAIL`,
+	`PHONE`,
+	`MOBILEPHONE`,
+	`ACCOUNT`,
+	`ACCOUNT_PHONE`,
+	`tab_prex_BRANCH__C`,
+	`tab_prex_COMPANY_NAME__C`,
+	`id_customer`,
+	null,
+	null,
+	null,
+	null,
+	'New SalesForce Contact prepared to be insert into PrestaShop',
+	CURRENT_TIMESTAMP FROM
+	`tab_prex_sf_contact_new_appendded`;
+
+	SELECT 
+    CONCAT('New Customer Record(s) : ',
+            COUNT(*),
+            ' !')
+INTO RUNNING_RESULT FROM
+    `tab_prex_sf_contact_new_appendded`;
+	
+DROP TEMPORARY TABLE IF EXISTS `tab_prex_sf_contact_new_appendded`;
+DROP TEMPORARY TABLE IF EXISTS `tab_prex_sf_contact_prepared_append`;
+
+
+/* As Final */
+DROP TEMPORARY TABLE IF EXISTS `tab_prex_sf_contact_ranked`;
+
+SELECT 
+    CONCAT('Now it ends: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+END

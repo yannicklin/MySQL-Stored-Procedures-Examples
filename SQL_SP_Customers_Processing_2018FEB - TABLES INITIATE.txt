@@ -1,0 +1,80 @@
+
+/* DECLARE PS_dbname VARCHAR(50); */
+SET @PS_dbname = 'database'; 
+
+/* ZERO! Prepare the SF table as Ranked */
+DROP TEMPORARY TABLE IF EXISTS `tab_prex_sf_contact_ranked`;
+CREATE TEMPORARY TABLE `tab_prex_sf_contact_ranked` ENGINE=MEMORY AS (SELECT 
+		`tab_prex_sf_contact`.`ID` AS`CONTACT_ID`,
+        `tab_prex_sf_contact`.`LASTNAME`,
+		`tab_prex_sf_contact`.`FIRSTNAME`,
+		`tab_prex_sf_contact`.`SALUTATION`,
+		`tab_prex_sf_contact`.`NAME` AS `CONTACT`,
+		`tab_prex_sf_contact`.`EMAIL`,
+		`tab_prex_sf_account`.`NAME` AS `ACCOUNT`,
+		`tab_prex_sf_account`.`tab_prex_BRANCH__C`,
+		`tab_prex_sf_account`.`tab_prex_COMPANY_NAME__C`,
+		@sf_contact_counter:=IF(@sf_email_current = email, @sf_contact_counter + 1, 1) AS sf_contact_rank,
+		@sf_email_current:=`tab_prex_sf_contact`.`EMAIL`
+    FROM
+        `tab_prex_sf_contact`
+    INNER JOIN `tab_prex_sf_account` ON `tab_prex_sf_contact`.`ACCOUNTID` = `tab_prex_sf_account`.`ID`
+    WHERE
+        UPPER(`tab_prex_sf_contact`.`tab_prex_ACTIVE__C`) = UPPER('TRUE')
+            AND UPPER(`tab_prex_sf_account`.`tab_prex_ACTIVE__C`) = UPPER('TRUE')
+    ORDER BY `tab_prex_sf_contact`.`EMAIL` , `tab_prex_sf_contact`.`ID`);
+
+	
+	
+DROP TEMPORARY TABLE IF EXISTS `tab_prex_sf_contact_duplciate_email_list`;
+CREATE TEMPORARY TABLE `tab_prex_sf_contact_duplciate_email_list` ENGINE=MEMORY AS (SELECT DISTINCT `EMAIL` FROM `tab_prex_sf_contact_ranked` WHERE `sf_contact_rank` > 1);
+
+DROP TABLE IF EXISTS `tab_prex_sf_contact_import_issues`;
+CREATE TABLE `tab_prex_sf_contact_import_issues` AS (
+	SELECT
+	`CONTACT_ID` AS `SF_CONTACT_ID`,
+	`FIRSTNAME` AS `SF_FIRSTNAME`,
+	`LASTNAME` AS `SF_LASTNAME`,
+	`SALUTATION` AS `SF_SALUTATION`,
+	`CONTACT` AS `SF_CONTACT`,
+	`EMAIL` AS `SF_EMAIL`,
+	`ACCOUNT` AS `SF_ACCOUNT`,
+	`tab_prex_BRANCH__C` AS `SF_BRANCH`,
+	`tab_prex_COMPANY_NAME__C` AS `SF_COMPANY_NAME`,
+	`CONTACT_ID` AS `tab_prex_id_customer`,
+	`FIRSTNAME` AS `tab_prex_firstname`,
+	`LASTNAME` AS `tab_prex_lastname`,
+	`tab_prex_COMPANY_NAME__C` AS `tab_prex_company`,
+	`EMAIL` AS `tab_prex_email`,
+	`tab_prex_COMPANY_NAME__C` AS `Issue`,
+	CURRENT_TIMESTAMP AS `Rec_Time` FROM
+	`tab_prex_sf_contact_ranked`
+WHERE
+	`EMAIL` IN (SELECT `EMAIL` FROM `tab_prex_sf_contact_duplciate_email_list`) 
+ORDER BY `EMAIL` , `CONTACT`);
+
+ALTER TABLE `tab_prex_sf_contact_import_issues` ADD `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY;
+TRUNCATE TABLE `tab_prex_sf_contact_import_issues`;
+
+DROP TEMPORARY TABLE IF EXISTS `tab_prex_sf_contact_duplciate_email_list`;
+
+
+DROP TABLE IF EXISTS `tab_prex_sf_contact_customer_mapping`;
+SET @theSQL=CONCAT('CREATE TABLE `tab_prex_sf_contact_customer_mapping` AS (
+	SELECT 
+	`tab_prex_sf_contact_ranked`.`CONTACT_ID`,
+	`kuom_customer`.`id_customer`,
+	`tab_prex_sf_contact_ranked`.`EMAIL`,
+	CURRENT_TIMESTAMP AS `Rec_Time` FROM
+	`tab_prex_sf_contact_ranked`
+	INNER JOIN `', @PS_dbname, '`.`kuom_customer` AS `kuom_customer` ON `tab_prex_sf_contact_ranked`.`FIRSTNAME` = `kuom_customer`.`firstname` AND `tab_prex_sf_contact_ranked`.`LASTNAME` = `kuom_customer`.`lastname` AND `tab_prex_sf_contact_ranked`.`tab_prex_COMPANY_NAME__C` = `kuom_customer`.`company` AND `tab_prex_sf_contact_ranked`.`EMAIL` = `kuom_customer`.`email`
+	WHERE 
+	`tab_prex_sf_contact_ranked`.`sf_contact_rank` = 1);');
+PREPARE SQLSTMT from @theSQL;
+EXECUTE SQLSTMT;
+DEALLOCATE PREPARE SQLSTMT;
+
+ALTER TABLE `tab_prex_sf_contact_customer_mapping` ADD PRIMARY KEY (`CONTACT_ID`, `id_customer`); 
+TRUNCATE TABLE `tab_prex_sf_contact_customer_mapping`;
+	
+DROP TEMPORARY TABLE IF EXISTS `tab_prex_sf_contact_ranked`;

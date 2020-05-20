@@ -1,0 +1,213 @@
+CREATE PROCEDURE `SP_Create_Product_Client_Price_Matrix`(OUT RUNNING_RESULT VARCHAR(50))
+BEGIN
+ DECLARE PS_DBNAME VARCHAR(50);
+ DECLARE batch INT;
+ DECLARE batch_size INT;
+ DECLARE start_point INT;
+  
+ SET PS_DBNAME = 'database_test';
+ SET batch = 200;
+ SET batch_size = 15;
+ SET start_point = 0;
+ 
+ 
+SELECT 'This procedure is to create the matrix of product and account/company, with the price based on the Price Tier and Debtor Price Rule.';
+SELECT 'All data are come from SalesForce without modifications.';
+SELECT 
+    CONCAT('Now it starts: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+/* RECREATE PRODUCT TABLE */
+DROP TABLE IF EXISTS `tab_prex_product`;
+
+CALL `SP_Exec_Qry`(CONCAT("CREATE TABLE `tab_prex_product` AS (SELECT `tab_prex_sf_product`.*,
+    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_1_PRICE`,
+    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_2_PRICE`,
+    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_3_PRICE`,
+    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_4_PRICE`,
+    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_5_PRICE`,
+    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_6_PRICE`,
+    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_7_PRICE`,
+    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_8_PRICE`,
+    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_9_PRICE`,
+    CAST(0.0 AS DECIMAL(8,2)) AS `FINAL_TIER_10_PRICE` FROM
+    `tab_prex_sf_product`
+WHERE
+    `tab_prex_sf_product`.`NAME` IN (SELECT DISTINCT
+            `reference`
+        FROM
+            (SELECT DISTINCT reference FROM `", PS_DBNAME, "`.`kuom_product`
+        WHERE
+            `active` = 1
+			UNION
+			SELECT DISTINCT reference FROM `", PS_DBNAME, "`.`kuom_product_attribute` ) AS `product_reference_list` ) AND `ISACTIVE` = 1 AND UPPER(`tab_prex_STATUS__C`) = UPPER('ACTIVE') ORDER BY NAME ASC )"));
+			
+
+/* Update fs_product TIER_PRICE based on the decision of which row (FS_CURRENT_DATE and FS_FORWARDER_DATE) is closer and not in future date */
+UPDATE `tab_prex_product` 
+SET 
+    `FINAL_TIER_1_PRICE` = `tab_prex_TIER_1_PRICE__C`,
+    `FINAL_TIER_2_PRICE` = `tab_prex_TIER_2_PRICE__C`,
+    `FINAL_TIER_3_PRICE` = `tab_prex_TIER_3_PRICE__C`,
+    `FINAL_TIER_4_PRICE` = `tab_prex_TIER_4_PRICE__C`,
+    `FINAL_TIER_5_PRICE` = `tab_prex_TIER_5_PRICE__C`,
+    `FINAL_TIER_6_PRICE` = `tab_prex_TIER_6_PRICE__C`,
+    `FINAL_TIER_7_PRICE` = `tab_prex_TIER_7_PRICE__C`,
+    `FINAL_TIER_8_PRICE` = `tab_prex_TIER_8_PRICE__C`,
+    `FINAL_TIER_9_PRICE` = `tab_prex_TIER_9_PRICE__C`,
+    `FINAL_TIER_10_PRICE` = `tab_prex_TIER_10_PRICE__C`
+WHERE
+    STR_TO_DATE(`tab_prex_CURRENT_DATE__C`, '%Y-%m-%d') <= CURDATE()
+        AND ((STR_TO_DATE(`tab_prex_CURRENT_DATE__C`, '%Y-%m-%d') >= STR_TO_DATE(`tab_prex_FORWARD_DATE__C`, '%Y-%m-%d'))
+        OR (STR_TO_DATE(`tab_prex_CURRENT_DATE__C`, '%Y-%m-%d') <= STR_TO_DATE(`tab_prex_FORWARD_DATE__C`, '%Y-%m-%d')
+        AND STR_TO_DATE(`tab_prex_FORWARD_DATE__C`, '%Y-%m-%d') >= CURDATE()));
+
+UPDATE `tab_prex_product` 
+SET 
+    `FINAL_TIER_1_PRICE` = `tab_prex_FORWARDED_PRICE_1__C`,
+    `FINAL_TIER_2_PRICE` = `tab_prex_FORWARDED_PRICE_2__C`,
+    `FINAL_TIER_3_PRICE` = `tab_prex_FORWARDED_PRICE_3__C`,
+    `FINAL_TIER_4_PRICE` = `tab_prex_FORWARDED_PRICE_4__C`,
+    `FINAL_TIER_5_PRICE` = `tab_prex_FORWARDED_PRICE_5__C`,
+    `FINAL_TIER_6_PRICE` = `tab_prex_FORWARDED_PRICE_6__C`,
+    `FINAL_TIER_7_PRICE` = `tab_prex_FORWARDED_PRICE_7__C`,
+    `FINAL_TIER_8_PRICE` = `tab_prex_FORWARDED_PRICE_8__C`,
+    `FINAL_TIER_9_PRICE` = `tab_prex_FORWARDED_PRICE_9__C`,
+    `FINAL_TIER_10_PRICE` = `tab_prex_FORWARDED_PRICE_10__C`
+WHERE
+    STR_TO_DATE(`tab_prex_FORWARD_DATE__C`, '%Y-%m-%d') <= CURDATE()
+        AND ((STR_TO_DATE(`tab_prex_FORWARD_DATE__C`, '%Y-%m-%d') >= STR_TO_DATE(`tab_prex_CURRENT_DATE__C`, '%Y-%m-%d'))
+        OR (STR_TO_DATE(`tab_prex_FORWARD_DATE__C`, '%Y-%m-%d') <= STR_TO_DATE(`tab_prex_CURRENT_DATE__C`, '%Y-%m-%d')
+        AND STR_TO_DATE(`tab_prex_CURRENT_DATE__C`, '%Y-%m-%d') >= CURDATE()));
+
+		
+/* RECREATE CUSTOMER/CONTACT TABLE */
+DROP TEMPORARY TABLE IF EXISTS `tab_prex_client`;
+
+CREATE TEMPORARY TABLE `tab_prex_client` ENGINE=MEMORY AS (SELECT `tab_prex_sf_contact`.`ID` AS `CONTACT_ID`,
+    `tab_prex_sf_contact`.`ACCOUNTID`,
+    `tab_prex_sf_contact`.`NAME` AS `CONTACT`,
+    `tab_prex_sf_contact`.`EMAIL`,
+    `tab_prex_sf_account`.`NAME` AS `ACCOUNT`,
+    `tab_prex_sf_account`.`tab_prex_SELLING_PRICE_SCHEME__C` FROM
+    `tab_prex_sf_contact`
+        INNER JOIN
+    `tab_prex_sf_account` ON `tab_prex_sf_contact`.`ACCOUNTID` = `tab_prex_sf_account`.`ID`
+	INNER JOIN `tab_prex_sf_contact_customer_mapping` ON `tab_prex_sf_contact`.`ID` = `tab_prex_sf_contact_customer_mapping`.`CONTACT_ID` 
+WHERE `tab_prex_sf_contact`.`tab_prex_ACTIVE__C` = 1
+        AND `tab_prex_sf_account`.`tab_prex_ACTIVE__C` = 1);
+		
+		
+/* Clean the final result table */
+DROP INDEX `index_fs_product_customer` ON `tab_prex_product_customer_price`;
+DROP INDEX `index_fs_product_customer_price` ON `tab_prex_product_customer_price`;
+TRUNCATE TABLE `tab_prex_product_customer_price`;
+
+
+SET @counter = 1;
+SET @current_batch_rec_count = 1;
+
+REPEAT 
+/* Partial Batch Processing based on the segment on Client Table */
+
+DROP TEMPORARY TABLE IF EXISTS `tab_prex_product_client`;
+/* Clean the temp table: the mix of product with client (contact with active account) */
+CREATE TEMPORARY TABLE `tab_prex_product_client` ENGINE=MEMORY AS (SELECT a.*, b.*, CAST(a.`tab_prex_RRP_PRICE__C` AS DECIMAL(8,2)) AS `tab_prex_PRICE_CALC`, CAST(a.`tab_prex_RRP_PRICE__C` AS DECIMAL(8,2)) AS `tab_prex_PRICE_CALC_DEBTOR` FROM `tab_prex_product` AS a JOIN (SELECT * FROM `tab_prex_client` LIMIT start_point, batch_size ) AS b);
+
+SELECT COUNT(*) INTO @current_batch_rec_count FROM `tab_prex_product_client`;
+
+UPDATE `tab_prex_product_client` 
+SET 
+    `tab_prex_PRICE_CALC` = `FINAL_TIER_1_PRICE`
+WHERE
+    UPPER(`tab_prex_SELLING_PRICE_SCHEME__C`) = UPPER('T1 Price');
+
+
+/* ... SAMPLES ... */
+
+
+UPDATE `tab_prex_product_client` 
+SET 
+    `tab_prex_PRICE_CALC_DEBTOR` = `tab_prex_PRICE_CALC`
+WHERE
+    `tab_prex_PRICE_CALC_DEBTOR` != `tab_prex_PRICE_CALC`;
+
+UPDATE `tab_prex_product_client`
+        INNER JOIN
+    (SELECT 
+        *
+    FROM
+        `tab_prex_sf_debtor_specific_price`
+    WHERE
+        UPPER(`tab_prex_sf_debtor_specific_price`.`tab_prex_MODE__C`) = UPPER('Percentage')
+            AND STR_TO_DATE(`tab_prex_sf_debtor_specific_price`.`tab_prex_START_DATE__C`, '%Y-%m-%d') <= CURDATE()
+            AND STR_TO_DATE(`tab_prex_sf_debtor_specific_price`.`tab_prex_END_DATE__C`, '%Y-%m-%d') >= CURDATE()) AS `partial_rules` ON `partial_rules`.`tab_prex_ACCOUNT__C` = `tab_prex_product_client`.`ACCOUNTID`
+        AND `partial_rules`.`tab_prex_PRODUCT__C` = `tab_prex_product_client`.`ID` 
+SET 
+    `tab_prex_product_client`.`tab_prex_PRICE_CALC_DEBTOR` = `tab_prex_product_client`.`tab_prex_PRICE_CALC_DEBTOR` * (100 - `partial_rules`.`tab_prex_AMOUNT__C`) / 100;
+
+UPDATE `tab_prex_product_client`
+        INNER JOIN
+    (SELECT 
+        *
+    FROM
+        `tab_prex_sf_debtor_specific_price`
+    WHERE
+        UPPER(`tab_prex_sf_debtor_specific_price`.`tab_prex_MODE__C`) = UPPER('NONE')
+            AND STR_TO_DATE(`tab_prex_sf_debtor_specific_price`.`tab_prex_START_DATE__C`, '%Y-%m-%d') <= CURDATE()
+            AND STR_TO_DATE(`tab_prex_sf_debtor_specific_price`.`tab_prex_END_DATE__C`, '%Y-%m-%d') >= CURDATE()) AS `partial_rules` ON `partial_rules`.`tab_prex_ACCOUNT__C` = `tab_prex_product_client`.`ACCOUNTID`
+        AND `partial_rules`.`tab_prex_PRODUCT__C` = `tab_prex_product_client`.`ID` AND `partial_rules`.`tab_prex_AMOUNT__C` > 0
+SET 
+    `tab_prex_product_client`.`tab_prex_PRICE_CALC_DEBTOR` = `partial_rules`.`tab_prex_AMOUNT__C`;
+    
+/* == ! Doing Nothing about those FS_MODE__C = 'Actual' ! == */
+	
+UPDATE `tab_prex_product_client` 
+SET 
+    `tab_prex_PRICE_CALC_DEBTOR` = 0
+WHERE
+    `tab_prex_PRICE_CALC_DEBTOR` < 0;
+
+/* Append to the final table */
+SET @theSQL=CONCAT("INSERT `tab_prex_product_customer_price` SELECT `tab_prex_product_client`.`NAME` AS `reference`, `tab_prex_sf_contact_customer_mapping`.`id_customer`, `tab_prex_product_client`.`tab_prex_PRICE_CALC_DEBTOR` AS `price`, CURRENT_TIMESTAMP AS `date_upd` FROM `tab_prex_product_client` INNER JOIN `tab_prex_sf_contact_customer_mapping` ON `tab_prex_product_client`.`CONTACT_ID` = `tab_prex_sf_contact_customer_mapping`.`CONTACT_ID`;");
+PREPARE SQLSTMT from @theSQL;
+EXECUTE SQLSTMT;
+DEALLOCATE PREPARE SQLSTMT;
+
+
+SELECT 
+    CONCAT('Batch #',
+            @counter,
+            ' finished at: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' .');
+
+	SET @counter = @counter + 1;
+    SET start_point = (@counter -1 )* batch_size;
+	
+	DROP TEMPORARY TABLE IF EXISTS `tab_prex_product_client`;
+
+UNTIL ((@counter >= batch) OR (@current_batch_rec_count = 0)) END REPEAT;
+	
+/* Recreate Index of the final table */
+CREATE INDEX `index_fs_product_customer_price` ON `tab_prex_product_customer_price` (`reference`, `id_customer`);
+CREATE INDEX `index_fs_product_customer` ON `tab_prex_product_customer_price` (`id_customer`);
+
+
+DROP TEMPORARY TABLE IF EXISTS `tab_prex_client`;
+
+
+/* Clone Result to PrestaShop Website Database */
+CALL `SP_Exec_Qry`(CONCAT("DROP TABLE IF EXISTS `", PS_DBNAME, "`.`kuom_product_customer_price`"));
+CALL `SP_Exec_Qry`(CONCAT("CREATE TABLE `", PS_DBNAME, "`.`kuom_product_customer_price` LIKE `tab_prex_product_customer_price`"));
+CALL `SP_Exec_Qry`(CONCAT("INSERT `", PS_DBNAME, "`.`kuom_product_customer_price` SELECT * FROM `tab_prex_product_customer_price`"));
+
+
+SELECT 
+    CONCAT('Now it ends: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+            
+SELECT 'The Price Matrix has been re-composed !' INTO RUNNING_RESULT;
+END

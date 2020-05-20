@@ -1,0 +1,114 @@
+CREATE DEFINER=`root`@`root` PROCEDURE `SP_Create_Product_Account_Price_Matrix`()
+BEGIN
+ DECLARE batch  INT;
+ DECLARE start_point INT;
+ DECLARE batch_size  INT;
+ 
+ SET batch = 1 ;
+ SET batch_size = 1000;
+ SET start_point = 0;
+ 
+SELECT 'This procedure is to create the matrix of product and account/company, with the price based on the Price Tier and Debtor Price Rule.';
+SELECT 'All data are come from SalesForce without modifications.';
+SELECT 'The execution time is estimated around 20-30 mins, 1GB+ space used.';
+SELECT 
+    CONCAT('Now it starts: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+
+
+
+/* DROP TABEL FOR CLEAN FIRST */
+DROP TABLE IF EXISTS `tab_prex_product`;
+
+CREATE TABLE `tab_prex_product` AS (SELECT `tab_prex_sf_product`.* FROM
+    `tab_prex_sf_product`
+WHERE
+    `tab_prex_sf_product`.`NAME` IN (SELECT DISTINCT
+            reference
+        FROM
+            `kuom_product`));
+
+  /* Clean the final result table */
+ TRUNCATE TABLE `tab_prex_product_account_price`;
+ 
+ WHILE batch <= 10 DO
+ 
+ /* Clean the temp table */
+ TRUNCATE TABLE `tab_prex_product_account`;
+ 
+ /* Insert the batch data for further processing */
+ INSERT `tab_prex_product_account` (SELECT a.*, b.`ID` AS `ACCOUNT_ID`, b.`tab_prex_SELLING_PRICE_SCHEME__C`, a.`tab_prex_RRP_PRICE__C` AS `tab_prex_PRICE_CALC`, a.`tab_prex_RRP_PRICE__C` AS `tab_prex_PRICE_CALC_DEBTOR` FROM (SELECT * FROM `tab_prex_product` WHERE UPPER(`ISACTIVE`) = UPPER('TRUE') AND UPPER(`ISDELETED`)= UPPER('FALSE') LIMIT start_point, batch_size) AS a JOIN (SELECT * FROM `tab_prex_sf_account` WHERE UPPER(`ISDELETED`) = UPPER('FALSE') AND UPPER(`tab_prex_ACTIVE__C`) = UPPER('TRUE')) AS b);/* 45 sec */
+ 
+UPDATE `tab_prex_product_account` 
+SET 
+    `tab_prex_PRICE_CALC` = `tab_prex_TIER_1_PRICE__C`
+WHERE
+    `tab_prex_TIER_1_PRICE__C` > 0
+        AND UPPER(`tab_prex_SELLING_PRICE_SCHEME__C`) = UPPER('T1 Price');/* 15 sec */
+UPDATE `tab_prex_product_account` 
+SET 
+    `tab_prex_PRICE_CALC` = `tab_prex_TIER_2_PRICE__C`
+WHERE
+    `tab_prex_TIER_2_PRICE__C` > 0
+        AND UPPER(`tab_prex_SELLING_PRICE_SCHEME__C`) = UPPER('T2 Price');/* 15 sec */
+UPDATE `tab_prex_product_account` 
+
+/* .... */
+
+UPDATE `tab_prex_product_account` 
+SET 
+    `tab_prex_PRICE_CALC_DEBTOR` = `tab_prex_PRICE_CALC`
+WHERE
+    `tab_prex_PRICE_CALC_DEBTOR` != `tab_prex_PRICE_CALC`;/* 30 sec */
+
+UPDATE `tab_prex_product_account`
+        INNER JOIN
+    (SELECT 
+        *
+    FROM
+        `tab_prex_sf_debtor_specific_price`
+    WHERE
+        `tab_prex_sf_debtor_specific_price`.`tab_prex_AMOUNT__C` <= 100
+            AND UPPER(`tab_prex_sf_debtor_specific_price`.`tab_prex_MODE__C`) = UPPER('Percentage')
+            AND `tab_prex_sf_debtor_specific_price`.`tab_prex_START_DATE` <= CURDATE()
+            AND `tab_prex_sf_debtor_specific_price`.`tab_prex_END_DATE` >= CURDATE()) AS `partial_rules` ON `partial_rules`.`tab_prex_ACCOUNT__C` = `tab_prex_product_account`.`ACCOUNT_ID`
+        AND `partial_rules`.`tab_prex_PRODUCT__C` = `tab_prex_product_account`.`ID` 
+SET 
+    `tab_prex_product_account`.`tab_prex_PRICE_CALC_DEBTOR` = `tab_prex_product_account`.`tab_prex_PRICE_CALC_DEBTOR` * (100 - `partial_rules`.`tab_prex_AMOUNT__C`) / 100;/* 10 sec */
+
+UPDATE `tab_prex_product_account`
+        INNER JOIN
+    (SELECT 
+        *
+    FROM
+        `tab_prex_sf_debtor_specific_price`
+    WHERE
+        UPPER(`tab_prex_sf_debtor_specific_price`.`tab_prex_MODE__C`) = UPPER('NONE')
+            AND `tab_prex_sf_debtor_specific_price`.`tab_prex_START_DATE` <= CURDATE()
+            AND `tab_prex_sf_debtor_specific_price`.`tab_prex_END_DATE` >= CURDATE()) AS `partial_rules` ON `partial_rules`.`tab_prex_ACCOUNT__C` = `tab_prex_product_account`.`ACCOUNT_ID`
+        AND `partial_rules`.`tab_prex_PRODUCT__C` = `tab_prex_product_account`.`ID` 
+SET 
+    `tab_prex_product_account`.`tab_prex_PRICE_CALC_DEBTOR` = `tab_prex_product_account`.`tab_prex_PRICE_CALC_DEBTOR` - `partial_rules`.`tab_prex_AMOUNT__C`; /* 10 sec */
+
+/* Append to the final table */
+INSERT `tab_prex_product_account_price` SELECT `ID`, `NAME`, `ACCOUNT_ID`, `tab_prex_PRICE_CALC_DEBTOR`, CURRENT_TIMESTAMP FROM `tab_prex_product_account`;/* 25 sec */
+
+
+SELECT 
+    CONCAT('Batch #',
+            batch,
+            ' finished at: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' .');
+
+	SET  batch = batch + 1;
+    SET start_point = (batch -1 )* batch_size;
+ END WHILE;
+	
+
+	SELECT 
+    CONCAT('Now it ends: ',
+            DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s'),
+            ' !');
+END

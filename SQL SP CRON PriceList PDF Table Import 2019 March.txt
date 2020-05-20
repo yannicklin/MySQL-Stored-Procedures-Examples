@@ -1,0 +1,11 @@
+INSERT IGNORE INTO `tab_prex_cron_pricelist_pdf_target` (sf_account_id, sf_account_name, jiwa_account_no, branch, category_exclusive, record_status, upd_date)
+SELECT `ID`, CASE WHEN TRIM(COALESCE(FS_COMPANY_NAME__C, '')) = '' THEN `NAME` ELSE `tab_prex_COMPANY_NAME__C` END, `tab_prex_JIWA_ACCOUNT_NO__C`, `tab_prex_BRANCH__C`, NULL, 'NONE', NOW() FROM `data_mapping`.`tab_prex_sf_account` where FS_ACTIVE__C = 1 AND RECORDTYPEID = 'xxxsample001xxx';
+
+INSERT IGNORE INTO `tab_prex_cron_pricelist_pdf_target_test` (sf_account_id, sf_account_name, jiwa_account_no, branch, category_exclusive, record_status, upd_date)
+SELECT `ID`, CASE WHEN TRIM(COALESCE(FS_COMPANY_NAME__C, '')) = '' THEN `NAME` ELSE `tab_prex_COMPANY_NAME__C` END, `tab_prex_JIWA_ACCOUNT_NO__C`, `tab_prex_BRANCH__C`, NULL, 'NONE', NOW() FROM `data_mapping`.`tab_prex_sf_account` where FS_ACTIVE__C = 1 AND RECORDTYPEID = 'xxxsample001xxx';
+
+INSERT IGNORE INTO `tab_prex_cron_pricelist_pdf_nz` (sf_account_id, sf_account_name, jiwa_account_no, branch, category_exclusive, record_status, upd_date)
+SELECT `ID`, CASE WHEN TRIM(COALESCE(FS_COMPANY_NAME__C, '')) = '' THEN `NAME` ELSE `tab_prex_COMPANY_NAME__C` END, `tab_prex_JIWA_ACCOUNT_NO__C`, `tab_prex_BRANCH__C`, NULL, 'NONE', NOW() FROM `data_mapping`.`tab_prex_sf_account` where FS_ACTIVE__C = 1 AND RECORDTYPEID = 'xxxsample002xxx';
+
+INSERT IGNORE INTO `tab_prex_cron_pricelist_pdf_targetnz_test` (sf_account_id, sf_account_name, jiwa_account_no, branch, category_exclusive, record_status, upd_date)
+SELECT `ID`, CASE WHEN TRIM(COALESCE(FS_COMPANY_NAME__C, '')) = '' THEN `NAME` ELSE `tab_prex_COMPANY_NAME__C` END, `tab_prex_JIWA_ACCOUNT_NO__C`, `tab_prex_BRANCH__C`, NULL, 'NONE', NOW() FROM `data_mapping`.`tab_prex_sf_account` where FS_ACTIVE__C = 1 AND RECORDTYPEID = 'xxxsample002xxx';

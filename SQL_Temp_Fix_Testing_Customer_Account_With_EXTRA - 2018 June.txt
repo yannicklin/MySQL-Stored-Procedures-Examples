@@ -1,0 +1,20 @@
+/* Append the extra fields to customer_extra */
+CALL `SP_Exec_Qry`(CONCAT("INSERT INTO `sampledb`.`kuom_customer_extra` (`id_customer`, `tab_prex_branch`, `tab_prex_branch_email`, `tab_prex_branch_location`, `tab_prex_branch_phone`, `sf_account`, `sf_account_jiwa`, `sf_account_name`, `sf_contact_phone`, `sf_contact_mobile`, `activation_status`, `last_activation_sent`)
+select a.`id_customer`, b.`tab_prex_BRANCH__C`, NULL AS `tab_prex_branch_email`, NULL AS `tab_prex_branch_location`, NULL AS `tab_prex_branch_phone`, b.`ACCOUNTID` AS `ACCOUNT_ID`, c.`tab_prex_JIWA_ACCOUNT_NO__C` AS `JIWA`, c.`NAME` AS `ACCOUNT`, b.`PHONE`, b.`MOBILEPHONE`, 0 AS `activation_status`, CURRENT_TIMESTAMP AS `last_activation_sent` from `tab_prex_sf_contact_customer_mapping` as a inner join `tab_prex_sf_contact` as b on a.`CONTACT_ID` = b.`ID` inner join `tab_prex_sf_account` as c on b.`ACCOUNTID` = c.`ID` where a.`id_customer` < 29 "));
+
+
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `sampledb`.`kuom_customer_extra` SET `tab_prex_branch_email` = 'qld@flamestop.com.au', `tab_prex_branch_location` = '70-82 Burchill Street, LOGANHOLME, QLD 4129', `tab_prex_branch_phone` = '07 3290 1169' WHERE UPPER(`tab_prex_branch`) = UPPER('Brisbane')"));
+
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `sampledb`.`kuom_customer_extra` SET `tab_prex_branch_email` = 'westsyd@flamestop.com.au', `tab_prex_branch_location` = '16 Davis Road, WETHERILL PARK, NSW 2164', `tab_prex_branch_phone` = '02 9725 3322' WHERE UPPER(`tab_prex_branch`) = UPPER('Wetherill Park')"));
+
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `sampledb`.`kuom_customer_extra` SET `tab_prex_branch_email` = 'vic@flamestop.com.au', `tab_prex_branch_location` = '4/23 Kelletts Road, ROWVILLE, VIC 3178', `tab_prex_branch_phone` = '03 8706 4900' WHERE UPPER(`tab_prex_branch`) = UPPER('Melbourne')"));
+
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `sampledb`.`kuom_customer_extra` SET `tab_prex_branch_email` = 'nq@flamestop.com.au', `tab_prex_branch_location` = '18/547 Woolcock Street, MOUNT LOUISA, QLD 4814', `tab_prex_branch_phone` = '07 4774 8199' WHERE UPPER(`tab_prex_branch`) = UPPER('Townsville')"));
+
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `sampledb`.`kuom_customer_extra` SET `tab_prex_branch_email` = 'sa@flamestop.com.au', `tab_prex_branch_location` = '59 Ashwin Parade, TORRENSVILLE, SA 5031', `tab_prex_branch_phone` = '08 8354 2408' WHERE UPPER(`tab_prex_branch`) = UPPER('Adelaide')"));
+
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `sampledb`.`kuom_customer_extra` SET `tab_prex_branch_email` = 'wa@flamestop.com.au', `tab_prex_branch_location` = '3 Millrose Drive, MALAGA, WA 6090', `tab_prex_branch_phone` = '08 9248 8599' WHERE UPPER(`tab_prex_branch`) = UPPER('Perth')"));
+
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `sampledb`.`kuom_customer_extra` SET `tab_prex_branch_email` = 'nsw@flamestop.com.au', `tab_prex_branch_location` = '1/70 Lower Gibbes Street, CHATSWOOD, NSW 2067', `tab_prex_branch_phone` = '02 9932 2020' WHERE UPPER(`tab_prex_branch`) = UPPER('Sydney')"));
+
+CALL `SP_Exec_Qry`(CONCAT("UPDATE `sampledb`.`kuom_customer_extra` SET `tab_prex_branch_email` = 'nsw@flamestop.com.au', `tab_prex_branch_location` = '1/70 Lower Gibbes Street, CHATSWOOD, NSW 2067', `tab_prex_branch_phone` = '02 9932 2020' WHERE UPPER(`tab_prex_branch`) NOT IN ('BRISBANE', 'WETHERILL PARK', 'MELBOURNE', 'TOWNSVILLE', 'ADELAIDE', 'PERTH', 'SYDNEY')"));
